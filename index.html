@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>資料夾檔案讀取器 (步驟式)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
     body {
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -72,6 +73,10 @@
     }
     button:active {
         transform: scale(0.98);
+    }
+    button:disabled { /* Style for disabled buttons */
+        background-color: #cccccc;
+        cursor: not-allowed;
     }
     .button-group {
         margin-top: 15px;
@@ -273,9 +278,12 @@
         </div>
 
         <div class="step" id="step3-output" style="display: none;">
-            <h2>步驟 3：合併內容預覽</h2>
+            <h2>步驟 3：合併內容預覽與匯出</h2>
             <textarea id="outputArea" readonly placeholder="選取的檔案內容將會顯示在這裡..."></textarea>
             <div class="button-group">
+                <button id="copyToClipboardButton">複製到剪貼簿</button>
+                <button id="downloadTxtButton">下載 TXT</button>
+                <button id="downloadPdfButton">下載 PDF</button>
                 <button id="backToStep2Button" class="secondary">返回步驟 2 修改選擇</button>
                 <button id="resetButton" class="danger">全部重來 (返回步驟 1)</button>
             </div>
@@ -300,9 +308,15 @@
     const backToStep2Button = document.getElementById('backToStep2Button');
     const resetButton = document.getElementById('resetButton');
 
+    // 新增按鈕的元素獲取
+    const copyToClipboardButton = document.getElementById('copyToClipboardButton');
+    const downloadTxtButton = document.getElementById('downloadTxtButton');
+    const downloadPdfButton = document.getElementById('downloadPdfButton');
+
 
     let fileSystemTree = new Map();
     let allFileObjects = [];
+    let processedFilesCountForStatus = 0; // 用於在status中顯示已處理檔案數
 
     // --- 步驟導航 ---
     function showStep(stepIdToShow) {
@@ -311,7 +325,6 @@
         });
         const activeStep = document.getElementById(stepIdToShow);
         if (activeStep) {
-            // 給瀏覽器一點時間渲染 display:block，再滾動
             setTimeout(() => {
                  activeStep.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, 50);
@@ -324,7 +337,7 @@
 
     folderInput.addEventListener('change', handleFolderSelect);
     processButton.addEventListener('click', () => {
-        generateOutput(); // 產生輸出後會自動跳轉
+        generateOutput(); 
     });
     selectByTypeBtn.addEventListener('click', () => filterByType(true));
     deselectByTypeBtn.addEventListener('click', () => filterByType(false));
@@ -333,6 +346,11 @@
     backToStep2Button.addEventListener('click', () => showStep('step2-file-tree-filter'));
     resetButton.addEventListener('click', resetAndGoToStep1);
 
+    // 新增按鈕的事件監聽器
+    copyToClipboardButton.addEventListener('click', handleCopyToClipboard);
+    downloadTxtButton.addEventListener('click', handleDownloadTxt);
+    downloadPdfButton.addEventListener('click', handleDownloadPdf);
+
 
     fileTreeDiv.addEventListener('change', (event) => {
         if (event.target.type === 'checkbox') {
@@ -340,36 +358,26 @@
             const isChecked = event.target.checked;
             const node = findNodeByPath(path, fileSystemTree);
             if (node) {
-                updateSelectionState(node, isChecked, true); // true 表示由用戶直接操作
+                updateSelectionState(node, isChecked, true); 
             }
         }
     });
 
     function resetAndGoToStep1() {
-        folderInput.value = ""; // 清空檔案選擇器 (用空字串比null更可靠)
+        folderInput.value = ""; 
         fileSystemTree.clear();
         allFileObjects = [];
         fileTreeDiv.innerHTML = '請先在步驟 1 選擇一個資料夾';
         outputArea.value = '';
         statusDiv.textContent = '';
         fileTypeInput.value = '';
+        processedFilesCountForStatus = 0;
         showStep('step1-folder-select');
     }
 
     function handleFolderSelect(event) {
         const files = event.target.files;
         if (!files.length) {
-            // 如果使用者取消選擇或選擇空資料夾，不要停留在步驟2的空狀態
-            // 保持在步驟1並提示
-            fileTreeDiv.innerHTML = '未選擇任何資料夾或資料夾為空。';
-            statusDiv.textContent = '';
-            // folderInput.value = ""; // 確保下次 change 事件能觸發
-            // showStep('step1-folder-select'); // 留在步驟1
-            // alert("您沒有選擇任何檔案或資料夾，或者選擇的資料夾是空的。請重試。");
-            // ^ 上述行為如果使用者只是關閉對話框而未選任何東西，會有點煩人。
-            // 簡單地返回，讓UI停在步驟1即可。
-            // 如果是從步驟2返回重新選擇，folderInput.value已經被清空了。
-            // 如果是首次選擇就沒選，那麼files.length為0，也不會進入下一步。
             return;
         }
 
@@ -387,21 +395,21 @@
                 currentPath.push(part);
                 const nodePath = currentPath.join('/');
 
-                if (i === pathParts.length - 1) { // File
+                if (i === pathParts.length - 1) { 
                     if (!currentLevel.has(part)) {
                          currentLevel.set(part, {
                             name: part, type: 'file', path: nodePath,
-                            fileObject: file, selected: false, children: null
+                            fileObject: file, selected: true, children: null // 預設選取
                         });
                     }
-                } else { // Folder
+                } else { 
                     if (!currentLevel.has(part)) {
                         currentLevel.set(part, {
                             name: part, type: 'folder', path: nodePath,
-                            selected: false, children: new Map()
+                            selected: true, children: new Map() // 預設選取
                         });
                     }
-                    if (currentLevel.get(part).type === 'file') { // Correct if mistakenly identified as file
+                    if (currentLevel.get(part).type === 'file') { 
                         currentLevel.get(part).type = 'folder';
                         currentLevel.get(part).children = currentLevel.get(part).children || new Map();
                         currentLevel.get(part).selected = true;
@@ -410,6 +418,9 @@
                 }
             }
         }
+        // 新增資料夾時，其下所有項目預設全選
+        fileSystemTree.forEach(node => updateSelectionState(node, true, false));
+
         renderFileTree();
         statusDiv.textContent = `已載入 ${allFileObjects.length} 個項目。預設全選。`;
         showStep('step2-file-tree-filter');
@@ -490,6 +501,10 @@
                 updateSelectionState(childNode, isSelected, false); 
             }
         }
+        // If user interaction unchecks a parent, its children are unchecked (handled above).
+        // If user interaction checks a child, we might need to update parent state (partial/full).
+        // For simplicity, current logic propagates parent to child.
+        // A more complex "tri-state" checkbox for folders is not implemented here.
     }
 
 
@@ -512,13 +527,15 @@
                     const fileExt = node.name.substring(node.name.lastIndexOf('.')).toLowerCase();
                     if (types.includes(fileExt)) {
                         if (node.selected !== select) {
-                            node.selected = select;
+                            // updateSelectionState(node, select, false); // This would propagate to parents if we had that logic
+                            node.selected = select; // Direct update
                             if (node.checkboxElement) node.checkboxElement.checked = select;
                             changedCount++;
                         }
                     }
                 } else if (node.type === 'folder' && node.children) {
                     traverseAndFilter(node.children);
+                    // Optionally, update folder selection based on children - current logic doesn't do this upward propagation
                 }
             }
         }
@@ -536,17 +553,16 @@
         showStep('step3-output'); 
 
         let outputContent = '';
-        let filesProcessed = 0;
         let filesToRead = [];
 
         function collectSelectedFiles(nodeMap) {
             const sortedEntries = [...nodeMap.entries()].sort(([keyA, valA], [keyB, valB]) => {
-                return valA.path.localeCompare(valB.path);
+                return valA.path.localeCompare(valB.path); // Sort by full path for consistent order
             });
             for (const [name, node] of sortedEntries) {
                 if (node.type === 'file' && node.selected && node.fileObject) {
                     filesToRead.push(node);
-                } else if (node.type === 'folder' && node.children) {
+                } else if (node.type === 'folder' && node.children) { // Only recurse if folder itself could contain selected files
                     collectSelectedFiles(node.children);
                 }
             }
@@ -558,19 +574,22 @@
             outputArea.value = "沒有選取任何檔案。";
             statusDiv.textContent = "完成。沒有檔案可處理。"; 
             document.getElementById('step3-output').querySelector('#outputArea').placeholder = "沒有選取任何檔案。";
+            processedFilesCountForStatus = 0;
             return;
         }
 
-        let updateCount = 0;
+        let filesReadSoFar = 0;
+        outputArea.placeholder = `正在處理... 已讀取 0 / ${filesToRead.length} 個檔案。`;
+
         for (const node of filesToRead) {
             try {
                 const fileContent = await node.fileObject.text();
                 outputContent += `路徑/${node.path}內容如下：\n`;
                 outputContent += `${fileContent}\n\n`;
-                filesProcessed++;
-                updateCount++;
-                if (updateCount % 10 === 0 || filesProcessed === filesToRead.length) { 
-                    outputArea.placeholder = `正在處理... 已讀取 ${filesProcessed} / ${filesToRead.length} 個檔案。`;
+                filesReadSoFar++;
+                // Update placeholder more frequently for better feedback
+                if (filesReadSoFar % 5 === 0 || filesReadSoFar === filesToRead.length) { 
+                    outputArea.placeholder = `正在處理... 已讀取 ${filesReadSoFar} / ${filesToRead.length} 個檔案。`;
                 }
             } catch (error) {
                 outputContent += `路徑/${node.path}內容如下：\n`;
@@ -581,7 +600,106 @@
 
         outputArea.value = outputContent;
         outputArea.placeholder = "選取的檔案內容將會顯示在這裡..."; 
-        statusDiv.textContent = `完成。共處理 ${filesProcessed} 個檔案。結果顯示在步驟 3。`;
+        processedFilesCountForStatus = filesReadSoFar;
+        statusDiv.textContent = `完成。共處理 ${processedFilesCountForStatus} 個檔案。結果顯示在步驟 3。`;
+    }
+
+    // --- 新增功能：複製、下載 TXT、下載 PDF ---
+    async function handleCopyToClipboard() {
+        const textToCopy = outputArea.value;
+        if (!textToCopy) {
+            alert('沒有內容可複製。');
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(textToCopy);
+            const originalText = copyToClipboardButton.textContent;
+            copyToClipboardButton.textContent = '已複製!';
+            copyToClipboardButton.disabled = true;
+            setTimeout(() => {
+                copyToClipboardButton.textContent = originalText;
+                copyToClipboardButton.disabled = false;
+            }, 2000);
+        } catch (err) {
+            console.error('無法複製到剪貼簿:', err);
+            alert('複製失敗，您的瀏覽器可能不支援此功能或未授予權限。');
+        }
+    }
+
+    function handleDownloadTxt() {
+        const textContent = outputArea.value;
+        if (!textContent) {
+            alert('沒有內容可下載。');
+            return;
+        }
+        const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'merged_content.txt';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    }
+
+    function handleDownloadPdf() {
+        const textContent = outputArea.value;
+        if (!textContent) {
+            alert('沒有內容可下載。');
+            return;
+        }
+
+        if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined') {
+            alert('PDF 生成函式庫 (jsPDF) 未載入。無法下載 PDF。\n請檢查網路連線或瀏覽器是否阻擋了外部腳本。');
+            console.error('jsPDF is not loaded or not in expected structure.');
+            return;
+        }
+
+        const { jsPDF: JsPDF } = window.jspdf;
+        const doc = new JsPDF();
+
+        // 預設字體對中文支援不佳，此處僅為基本實現
+        // 若需完美中文顯示，需嵌入中文字體 (如 Noto Sans CJK)
+        doc.setFont('Courier'); // 使用等寬字體，盡量模擬 textarea 外觀
+        const fontSize = 10; 
+        doc.setFontSize(fontSize);
+
+        const margin = 10; // mm
+        const pageWidth = doc.internal.pageSize.getWidth() - 2 * margin;
+        // const pageHeight = doc.internal.pageSize.getHeight() - 2 * margin; // Not directly used for y limit this way
+        const textDimensions = doc.getTextDimensions("M", { fontSize: fontSize }); // Get dimensions of a character
+        const lineHeight = textDimensions.h * 1.2; // 行高，加入約20%間距
+
+        let cursorY = margin;
+
+        const originalLines = textContent.split('\n');
+        
+        originalLines.forEach(originalLine => {
+            // jsPDF splitTextToSize 會處理長行換行
+            const wrappedLines = doc.splitTextToSize(originalLine, pageWidth);
+
+            wrappedLines.forEach(lineSegment => {
+                if (cursorY + lineHeight > doc.internal.pageSize.getHeight() - margin) { // 檢查是否超出頁面
+                    doc.addPage();
+                    cursorY = margin; // 新頁面，重置 Y 座標
+                }
+                doc.text(lineSegment, margin, cursorY);
+                cursorY += lineHeight;
+            });
+        });
+        
+        try {
+            doc.save('merged_content.pdf');
+            const originalStatus = statusDiv.textContent;
+            statusDiv.textContent = "PDF 已產生。注意：預設字體對中文支援有限，部分字元可能無法正確顯示。";
+            setTimeout(() => {
+                statusDiv.textContent = originalStatus;
+            }, 5000);
+
+        } catch (e) {
+            console.error("生成 PDF 時發生錯誤:", e);
+            alert("生成 PDF 時發生錯誤。部分特殊字元可能無法正確顯示。");
+        }
     }
 
 </script>
