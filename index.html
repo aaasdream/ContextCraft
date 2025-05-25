@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>資料夾檔案讀取器 (步驟式)</title>
+<style>
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        margin: 0;
+        padding: 0; /* Body padding handled by container */
+        background-color: #f0f2f5;
+        color: #333;
+        line-height: 1.6;
+    }
+    .page-container {
+        width: 90%;
+        max-width: 800px;
+        margin: 30px auto;
+        padding: 20px;
+    }
+    .step {
+        background-color: #fff;
+        padding: 25px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        margin-bottom: 30px;
+    }
+    .step h2 {
+        margin-top: 0;
+        color: #0056b3;
+        border-bottom: 2px solid #eef;
+        padding-bottom: 10px;
+        margin-bottom: 20px;
+    }
+    .step h3 {
+        margin-top: 20px;
+        margin-bottom: 10px;
+        color: #17a2b8;
+    }
+
+    /* --- 檔案選擇與控制 --- */
+    .input-group {
+        margin-bottom: 20px;
+    }
+    .input-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: bold;
+    }
+    input[type="file"], input[type="text"] {
+        width: calc(100% - 24px); /* Full width minus padding */
+        padding: 10px 12px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font-size: 15px;
+        box-sizing: border-box;
+    }
+    button {
+        padding: 10px 18px;
+        border: none;
+        border-radius: 6px;
+        font-size: 15px;
+        color: white;
+        background-color: #007bff;
+        cursor: pointer;
+        transition: background-color 0.2s, transform 0.1s;
+        margin-top: 5px;
+    }
+    button:hover {
+        background-color: #0056b3;
+    }
+    button:active {
+        transform: scale(0.98);
+    }
+    .button-group {
+        margin-top: 15px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
+    }
+    .type-filter button {
+        background-color: #17a2b8;
+    }
+    .type-filter button:hover {
+        background-color: #117a8b;
+    }
+
+    /* --- 檔案樹 --- */
+    #fileTree {
+        border: 1px solid #ddd;
+        padding: 15px;
+        border-radius: 6px;
+        max-height: 50vh; /* Max height relative to viewport */
+        overflow-y: auto;
+        background-color: #fdfdfd;
+    }
+    #fileTree ul {
+        list-style-type: none;
+        padding-left: 20px; /* 主要縮排，為階層線留空間 */
+        margin: 0;
+        position: relative; /* 作為階層線的定位參考 */
+    }
+
+    /* 垂直階層線 */
+    #fileTree ul::before {
+        content: '';
+        position: absolute;
+        left: 10px; /* 垂直線的位置 (ul padding-left 的一半) */
+        top: 0;
+        bottom: 0; /* 預設延伸到底部 */
+        width: 0;
+        border-left: 1px dotted #bbb;
+    }
+
+    #fileTree li {
+        margin-bottom: 8px;
+        position: relative; /* 作為 li 的階層線的定位參考 */
+        padding-left: 25px; /* 為 li 的水平階層線和 checkbox 留出空間 */
+                               /* (10px 到垂直線 + 15px 水平線長度) */
+    }
+
+    /* 水平階層線 (T 字或 L 字的水平部分) */
+    #fileTree li::before {
+        content: '';
+        position: absolute;
+        top: 12px; /* 大約在 checkbox 的垂直中間 */
+        left: -15px; /* 從 li 文字區塊開始往左畫 (25px padding - 10px ul垂直線位置) */
+        width: 15px; /* 水平線的長度，連接到 ul 的垂直線 */
+        height: 0;
+        border-top: 1px dotted #bbb;
+    }
+
+    /* 處理最後一個 li 下方多餘的垂直線 */
+    /* 為最後一個 li 之後的垂直線部分，用背景色覆蓋掉 */
+    #fileTree li:last-child::after {
+        content: '';
+        position: absolute;
+        left: -15px; /* 與 li::before 的 left 對齊，即 ul 垂直線的位置 */
+        top: 13px;   /* 從水平線下方開始 */
+        bottom: 0;
+        width: 0; /* 只是為了定位 */
+        /* 使用 #fileTree 的背景色覆蓋 */
+        border-left: 2px solid #fdfdfd; /* 確保能蓋住 dotted line */
+    }
+
+
+    /* --- 自訂 Checkbox 樣式 (維持不變，但注意其定位是相對於 label) --- */
+    #fileTree input[type="checkbox"] {
+        display: none; /* 隱藏原始 checkbox */
+    }
+    #fileTree label {
+        cursor: pointer;
+        padding-left: 35px; /* 為自訂 checkbox 留出空間 (相對於 label 的起始位置) */
+        position: relative;
+        font-size: 16px;
+        line-height: 24px; /* 確保垂直對齊 */
+        display: inline-flex; /* 讓 label 包裹內容 */
+        align-items: center;
+        min-height: 24px; /* 確保最小高度 */
+    }
+    #fileTree label .label-text {
+        display: inline-block;
+        vertical-align: middle;
+    }
+
+    /* 自訂 checkbox 的框 */
+    #fileTree label::before {
+        content: '';
+        position: absolute;
+        left: 0; /* 相對於 label 的 padding-left 區域的左邊 */
+        top: 50%;
+        transform: translateY(-50%);
+        width: 22px; /* 增大尺寸 */
+        height: 22px; /* 增大尺寸 */
+        border: 2px solid #007bff;
+        border-radius: 4px;
+        background-color: #fff;
+        box-sizing: border-box;
+        transition: background-color 0.2s, border-color 0.2s;
+    }
+
+    /* 選中時的背景和邊框 */
+    #fileTree input[type="checkbox"]:checked + label::before {
+        background-color: #007bff;
+        border-color: #007bff;
+    }
+
+    /* 選中時的勾 */
+    #fileTree input[type="checkbox"]:checked + label::after {
+        content: '✔';
+        position: absolute;
+        left: 5px; /* 調整勾在框內的位置 */
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 15px;
+        font-weight: bold;
+        color: white;
+        line-height: 1;
+    }
+    
+    /* --- 輸出區域 --- */
+    #outputArea {
+        width: 100%;
+        min-height: 300px;
+        height: 60vh; /* Relative to viewport height */
+        margin-top: 10px;
+        padding: 12px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        box-sizing: border-box;
+        font-family: 'Courier New', Courier, monospace;
+        white-space: pre;
+        background-color: #f8f9fa;
+        font-size: 14px;
+    }
+    #status {
+        margin-top: 15px;
+        font-style: italic;
+        color: #555;
+    }
+
+    /* 次要按鈕樣式 */
+    button.secondary {
+        background-color: #6c757d;
+    }
+    button.secondary:hover {
+        background-color: #545b62;
+    }
+    button.danger {
+        background-color: #dc3545;
+    }
+    button.danger:hover {
+        background-color: #b02a37;
+    }
+
+</style>
+</head>
+<body>
+
+    <div class="page-container">
+        <h1>資料夾檔案讀取器 (步驟式)</h1>
+        <p>本工具將引導您完成選擇資料夾、篩選檔案並合併其內容的步驟。所有操作均在目前頁面依序進行。</p>
+
+        <div class="step" id="step1-folder-select">
+            <h2>步驟 1：選擇資料夾</h2>
+            <div class="input-group">
+                <label for="folderInput">點擊下方按鈕選擇您的資料夾：</label>
+                <input type="file" id="folderInput" webkitdirectory directory multiple>
+            </div>
+            <p>選擇資料夾後，其內容將顯示在下一步供您選擇。</p>
+        </div>
+
+        <div class="step" id="step2-file-tree-filter" style="display: none;">
+            <h2>步驟 2：檔案選擇與篩選</h2>
+            <div class="input-group">
+                <h3>依類型篩選檔案</h3>
+                <input type="text" id="fileTypeInput" placeholder="例如：.py, .txt (逗號分隔)">
+                <div class="button-group type-filter">
+                    <button id="selectByTypeBtn">選取此類型</button>
+                    <button id="deselectByTypeBtn">取消此類型</button>
+                </div>
+            </div>
+            
+            <h3>檔案結構樹</h3>
+            <div id="fileTree">請先在步驟 1 選擇一個資料夾</div>
+
+            <div id="status"></div>
+            <div class="button-group">
+                <button id="processButton">前往步驟 3：產生合併內容</button>
+                <button id="backToStep1Button" class="secondary">返回步驟 1 重新選擇資料夾</button>
+            </div>
+        </div>
+
+        <div class="step" id="step3-output" style="display: none;">
+            <h2>步驟 3：合併內容預覽</h2>
+            <textarea id="outputArea" readonly placeholder="選取的檔案內容將會顯示在這裡..."></textarea>
+            <div class="button-group">
+                <button id="backToStep2Button" class="secondary">返回步驟 2 修改選擇</button>
+                <button id="resetButton" class="danger">全部重來 (返回步驟 1)</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const folderInput = document.getElementById('folderInput');
+    const fileTreeDiv = document.getElementById('fileTree');
+    const processButton = document.getElementById('processButton');
+    const outputArea = document.getElementById('outputArea');
+    const statusDiv = document.getElementById('status');
+    const fileTypeInput = document.getElementById('fileTypeInput');
+    const selectByTypeBtn = document.getElementById('selectByTypeBtn');
+    const deselectByTypeBtn = document.getElementById('deselectByTypeBtn');
+
+    const step1Div = document.getElementById('step1-folder-select');
+    const step2Div = document.getElementById('step2-file-tree-filter');
+    const step3Div = document.getElementById('step3-output');
+
+    const backToStep1Button = document.getElementById('backToStep1Button');
+    const backToStep2Button = document.getElementById('backToStep2Button');
+    const resetButton = document.getElementById('resetButton');
+
+
+    let fileSystemTree = new Map();
+    let allFileObjects = [];
+
+    // --- 步驟導航 ---
+    function showStep(stepIdToShow) {
+        [step1Div, step2Div, step3Div].forEach(step => {
+            step.style.display = (step.id === stepIdToShow) ? 'block' : 'none';
+        });
+        const activeStep = document.getElementById(stepIdToShow);
+        if (activeStep) {
+            // 給瀏覽器一點時間渲染 display:block，再滾動
+            setTimeout(() => {
+                 activeStep.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 50);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        showStep('step1-folder-select');
+    });
+
+    folderInput.addEventListener('change', handleFolderSelect);
+    processButton.addEventListener('click', () => {
+        generateOutput(); // 產生輸出後會自動跳轉
+    });
+    selectByTypeBtn.addEventListener('click', () => filterByType(true));
+    deselectByTypeBtn.addEventListener('click', () => filterByType(false));
+    
+    backToStep1Button.addEventListener('click', resetAndGoToStep1);
+    backToStep2Button.addEventListener('click', () => showStep('step2-file-tree-filter'));
+    resetButton.addEventListener('click', resetAndGoToStep1);
+
+
+    fileTreeDiv.addEventListener('change', (event) => {
+        if (event.target.type === 'checkbox') {
+            const path = event.target.dataset.path;
+            const isChecked = event.target.checked;
+            const node = findNodeByPath(path, fileSystemTree);
+            if (node) {
+                updateSelectionState(node, isChecked, true); // true 表示由用戶直接操作
+            }
+        }
+    });
+
+    function resetAndGoToStep1() {
+        folderInput.value = ""; // 清空檔案選擇器 (用空字串比null更可靠)
+        fileSystemTree.clear();
+        allFileObjects = [];
+        fileTreeDiv.innerHTML = '請先在步驟 1 選擇一個資料夾';
+        outputArea.value = '';
+        statusDiv.textContent = '';
+        fileTypeInput.value = '';
+        showStep('step1-folder-select');
+    }
+
+    function handleFolderSelect(event) {
+        const files = event.target.files;
+        if (!files.length) {
+            // 如果使用者取消選擇或選擇空資料夾，不要停留在步驟2的空狀態
+            // 保持在步驟1並提示
+            fileTreeDiv.innerHTML = '未選擇任何資料夾或資料夾為空。';
+            statusDiv.textContent = '';
+            // folderInput.value = ""; // 確保下次 change 事件能觸發
+            // showStep('step1-folder-select'); // 留在步驟1
+            // alert("您沒有選擇任何檔案或資料夾，或者選擇的資料夾是空的。請重試。");
+            // ^ 上述行為如果使用者只是關閉對話框而未選任何東西，會有點煩人。
+            // 簡單地返回，讓UI停在步驟1即可。
+            // 如果是從步驟2返回重新選擇，folderInput.value已經被清空了。
+            // 如果是首次選擇就沒選，那麼files.length為0，也不會進入下一步。
+            return;
+        }
+
+        statusDiv.textContent = '正在建立檔案樹...';
+        fileSystemTree.clear();
+        allFileObjects = Array.from(files);
+
+        for (const file of allFileObjects) {
+            const pathParts = file.webkitRelativePath.split('/');
+            let currentLevel = fileSystemTree;
+            let currentPath = [];
+
+            for (let i = 0; i < pathParts.length; i++) {
+                const part = pathParts[i];
+                currentPath.push(part);
+                const nodePath = currentPath.join('/');
+
+                if (i === pathParts.length - 1) { // File
+                    if (!currentLevel.has(part)) {
+                         currentLevel.set(part, {
+                            name: part, type: 'file', path: nodePath,
+                            fileObject: file, selected: false, children: null
+                        });
+                    }
+                } else { // Folder
+                    if (!currentLevel.has(part)) {
+                        currentLevel.set(part, {
+                            name: part, type: 'folder', path: nodePath,
+                            selected: false, children: new Map()
+                        });
+                    }
+                    if (currentLevel.get(part).type === 'file') { // Correct if mistakenly identified as file
+                        currentLevel.get(part).type = 'folder';
+                        currentLevel.get(part).children = currentLevel.get(part).children || new Map();
+                        currentLevel.get(part).selected = true;
+                    }
+                    currentLevel = currentLevel.get(part).children;
+                }
+            }
+        }
+        renderFileTree();
+        statusDiv.textContent = `已載入 ${allFileObjects.length} 個項目。預設全選。`;
+        showStep('step2-file-tree-filter');
+    }
+
+    function renderFileTree() {
+        fileTreeDiv.innerHTML = '';
+        const rootUl = document.createElement('ul');
+        appendTreeNodes(fileSystemTree, rootUl);
+        fileTreeDiv.appendChild(rootUl);
+    }
+
+    function appendTreeNodes(nodeMap, parentElement) {
+        const sortedEntries = [...nodeMap.entries()].sort(([keyA, valA], [keyB, valB]) => {
+            if (valA.type === 'folder' && valB.type === 'file') return -1;
+            if (valA.type === 'file' && valB.type === 'folder') return 1;
+            return keyA.localeCompare(keyB);
+        });
+
+        for (const [name, node] of sortedEntries) {
+            const li = document.createElement('li');
+            
+            const randomSuffix = Math.random().toString(36).substring(2, 7);
+            const checkboxId = `cb-${node.path.replace(/[^a-zA-Z0-9_-]/g, '_')}-${randomSuffix}`;
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = checkboxId;
+            checkbox.checked = node.selected;
+            checkbox.dataset.path = node.path;
+
+            const label = document.createElement('label');
+            label.htmlFor = checkboxId;
+
+            const labelTextSpan = document.createElement('span');
+            labelTextSpan.classList.add('label-text');
+            let icon = node.type === 'folder' ? '📁 ' : '📄 ';
+            labelTextSpan.textContent = icon + node.name;
+            
+            label.appendChild(labelTextSpan);
+
+            li.appendChild(checkbox);
+            li.appendChild(label);
+
+            node.checkboxElement = checkbox; 
+
+            if (node.type === 'folder' && node.children && node.children.size > 0) {
+                const childrenUl = document.createElement('ul');
+                appendTreeNodes(node.children, childrenUl);
+                li.appendChild(childrenUl);
+            }
+            parentElement.appendChild(li);
+        }
+    }
+    
+    function findNodeByPath(path, currentMapLevel) {
+        const parts = path.split('/');
+        let node = null;
+        let currentLevel = currentMapLevel;
+        for (const part of parts) {
+            if (!currentLevel || !currentLevel.has(part)) return null;
+            node = currentLevel.get(part);
+            if (node.type === 'folder' && node.children) {
+                currentLevel = node.children;
+            } else if (parts.indexOf(part) < parts.length -1 ) { 
+                return null;
+            }
+        }
+        return node;
+    }
+    
+    function updateSelectionState(node, isSelected, isUserInteraction) {
+        node.selected = isSelected;
+        if (node.checkboxElement) node.checkboxElement.checked = isSelected;
+
+        if (node.type === 'folder' && node.children) {
+            for (const childNode of node.children.values()) {
+                updateSelectionState(childNode, isSelected, false); 
+            }
+        }
+    }
+
+
+    function filterByType(select) {
+        const typesString = fileTypeInput.value.trim();
+        if (!typesString) {
+            alert('請輸入要篩選的檔案類型，例如 .txt, .js');
+            return;
+        }
+        const types = typesString.split(',').map(t => t.trim().toLowerCase()).filter(t => t.startsWith('.'));
+        if (!types.length) {
+            alert('無效的檔案類型格式。請確保以 . 開頭，例如 .py');
+            return;
+        }
+
+        let changedCount = 0;
+        function traverseAndFilter(nodeMap) {
+            for (const node of nodeMap.values()) {
+                if (node.type === 'file') {
+                    const fileExt = node.name.substring(node.name.lastIndexOf('.')).toLowerCase();
+                    if (types.includes(fileExt)) {
+                        if (node.selected !== select) {
+                            node.selected = select;
+                            if (node.checkboxElement) node.checkboxElement.checked = select;
+                            changedCount++;
+                        }
+                    }
+                } else if (node.type === 'folder' && node.children) {
+                    traverseAndFilter(node.children);
+                }
+            }
+        }
+        traverseAndFilter(fileSystemTree);
+        if (changedCount > 0) {
+            statusDiv.textContent = `已按類型 ${types.join(', ')} ${select ? '選取' : '取消選取'} 了 ${changedCount} 個檔案。`;
+        } else {
+            statusDiv.textContent = `按類型 ${types.join(', ')} 篩選：沒有檔案的選取狀態被改變。`;
+        }
+    }
+
+    async function generateOutput() {
+        outputArea.value = '';
+        statusDiv.textContent = '正在讀取檔案內容...';
+        showStep('step3-output'); 
+
+        let outputContent = '';
+        let filesProcessed = 0;
+        let filesToRead = [];
+
+        function collectSelectedFiles(nodeMap) {
+            const sortedEntries = [...nodeMap.entries()].sort(([keyA, valA], [keyB, valB]) => {
+                return valA.path.localeCompare(valB.path);
+            });
+            for (const [name, node] of sortedEntries) {
+                if (node.type === 'file' && node.selected && node.fileObject) {
+                    filesToRead.push(node);
+                } else if (node.type === 'folder' && node.children) {
+                    collectSelectedFiles(node.children);
+                }
+            }
+        }
+
+        collectSelectedFiles(fileSystemTree);
+        
+        if (filesToRead.length === 0) {
+            outputArea.value = "沒有選取任何檔案。";
+            statusDiv.textContent = "完成。沒有檔案可處理。"; 
+            document.getElementById('step3-output').querySelector('#outputArea').placeholder = "沒有選取任何檔案。";
+            return;
+        }
+
+        let updateCount = 0;
+        for (const node of filesToRead) {
+            try {
+                const fileContent = await node.fileObject.text();
+                outputContent += `路徑/${node.path}內容如下：\n`;
+                outputContent += `${fileContent}\n\n`;
+                filesProcessed++;
+                updateCount++;
+                if (updateCount % 10 === 0 || filesProcessed === filesToRead.length) { 
+                    outputArea.placeholder = `正在處理... 已讀取 ${filesProcessed} / ${filesToRead.length} 個檔案。`;
+                }
+            } catch (error) {
+                outputContent += `路徑/${node.path}內容如下：\n`;
+                outputContent += `[錯誤：無法讀取檔案內容 - ${error.message}]\n\n`;
+                console.error(`讀取檔案 ${node.path} 失敗:`, error);
+            }
+        }
+
+        outputArea.value = outputContent;
+        outputArea.placeholder = "選取的檔案內容將會顯示在這裡..."; 
+        statusDiv.textContent = `完成。共處理 ${filesProcessed} 個檔案。結果顯示在步驟 3。`;
+    }
+
+</script>
+
+</body>
+</html>
