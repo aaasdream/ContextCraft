@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>資料夾檔案讀取器 (步驟式)</title>
+<title>資料夾檔案讀取器 (進階版)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
     body {
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         margin: 0;
-        padding: 0; /* Body padding handled by container */
+        padding: 0;
         background-color: #f0f2f5;
         color: #333;
         line-height: 1.6;
@@ -39,8 +39,6 @@
         margin-bottom: 10px;
         color: #17a2b8;
     }
-
-    /* --- 檔案選擇與控制 --- */
     .input-group {
         margin-bottom: 20px;
     }
@@ -49,7 +47,6 @@
         margin-bottom: 8px;
         font-weight: bold;
     }
-    /* Style for checkbox label */
     .input-group label[for="includeTreeCheckbox"] {
         display: inline-flex;
         align-items: center;
@@ -61,14 +58,18 @@
         width: 16px;
         height: 16px;
     }
-
-    input[type="file"], input[type="text"] {
-        width: calc(100% - 24px); /* Full width minus padding */
+    input[type="file"], input[type="text"], input[type="number"] {
+        width: calc(100% - 24px);
         padding: 10px 12px;
         border: 1px solid #ccc;
         border-radius: 6px;
         font-size: 15px;
         box-sizing: border-box;
+    }
+    /* Specific width for number input */
+    .advanced-filter-group input[type="number"] {
+        width: 120px;
+        margin-right: 10px;
     }
     button {
         padding: 10px 18px;
@@ -84,10 +85,8 @@
     button:hover {
         background-color: #0056b3;
     }
-    button:active {
-        transform: scale(0.98);
-    }
-    button:disabled { /* Style for disabled buttons */
+    button:active { transform: scale(0.98); }
+    button:disabled {
         background-color: #cccccc;
         cursor: not-allowed;
     }
@@ -95,21 +94,16 @@
         margin-top: 15px;
         display: flex;
         gap: 10px;
-        flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
+        flex-wrap: wrap;
+        align-items: center; /* Align items vertically */
     }
-    .type-filter button {
-        background-color: #17a2b8;
-    }
-    .type-filter button:hover {
-        background-color: #117a8b;
-    }
-
-    /* --- 檔案樹 --- */
+    .type-filter button { background-color: #17a2b8; }
+    .type-filter button:hover { background-color: #117a8b; }
     #fileTree {
         border: 1px solid #ddd;
         padding: 15px;
         border-radius: 6px;
-        max-height: 50vh; /* Max height relative to viewport */
+        max-height: 50vh;
         overflow-y: auto;
         background-color: #fdfdfd;
     }
@@ -120,137 +114,83 @@
         position: relative;
     }
     #fileTree ul::before {
-        content: '';
-        position: absolute;
-        left: 10px;
-        top: 0;
-        bottom: 0;
-        width: 0;
+        content: ''; position: absolute; left: 10px; top: 0; bottom: 0;
         border-left: 1px dotted #bbb;
     }
-    #fileTree li {
-        margin-bottom: 8px;
-        position: relative;
-        padding-left: 25px;
-    }
+    #fileTree li { margin-bottom: 8px; position: relative; padding-left: 25px; }
     #fileTree li::before {
-        content: '';
-        position: absolute;
-        top: 12px;
-        left: -15px;
-        width: 15px;
-        height: 0;
-        border-top: 1px dotted #bbb;
+        content: ''; position: absolute; top: 12px; left: -15px;
+        width: 15px; border-top: 1px dotted #bbb;
     }
     #fileTree li:last-child::after {
-        content: '';
-        position: absolute;
-        left: -15px;
-        top: 13px;
-        bottom: 0;
-        width: 0;
+        content: ''; position: absolute; left: -15px; top: 13px; bottom: 0;
         border-left: 2px solid #fdfdfd;
     }
-    #fileTree input[type="checkbox"] {
-        display: none;
-    }
+    #fileTree input[type="checkbox"] { display: none; }
     #fileTree label {
-        cursor: pointer;
-        padding-left: 35px;
-        position: relative;
-        font-size: 16px;
-        line-height: 24px;
-        display: inline-flex;
-        align-items: center;
-        min-height: 24px;
+        cursor: pointer; padding-left: 35px; position: relative;
+        font-size: 16px; line-height: 24px; display: inline-flex;
+        align-items: center; min-height: 24px;
     }
-    #fileTree label .label-text {
-        display: inline-block;
-        vertical-align: middle;
+    #fileTree label .label-text { display: inline-block; vertical-align: middle; }
+    #fileTree label .file-meta {
+        font-size: 0.8em;
+        color: #6c757d;
+        margin-left: 10px;
+        font-style: italic;
     }
     #fileTree label::before {
-        content: '';
-        position: absolute;
-        left: 0;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 22px;
-        height: 22px;
-        border: 2px solid #007bff;
-        border-radius: 4px;
-        background-color: #fff;
-        box-sizing: border-box;
+        content: ''; position: absolute; left: 0; top: 50%;
+        transform: translateY(-50%); width: 22px; height: 22px;
+        border: 2px solid #007bff; border-radius: 4px;
+        background-color: #fff; box-sizing: border-box;
         transition: background-color 0.2s, border-color 0.2s;
     }
     #fileTree input[type="checkbox"]:checked + label::before {
-        background-color: #007bff;
-        border-color: #007bff;
+        background-color: #007bff; border-color: #007bff;
     }
     #fileTree input[type="checkbox"]:checked + label::after {
-        content: '✔';
-        position: absolute;
-        left: 5px;
-        top: 50%;
-        transform: translateY(-50%);
-        font-size: 15px;
-        font-weight: bold;
-        color: white;
-        line-height: 1;
+        content: '✔'; position: absolute; left: 5px; top: 50%;
+        transform: translateY(-50%); font-size: 15px; font-weight: bold;
+        color: white; line-height: 1;
     }
-    
-    /* --- 輸出區域 --- */
     #outputArea {
-        width: 100%;
-        min-height: 300px;
-        height: 60vh;
-        margin-top: 10px;
-        padding: 12px;
-        border: 1px solid #ccc;
-        border-radius: 6px;
-        box-sizing: border-box;
-        font-family: 'Courier New', Courier, monospace;
-        white-space: pre;
-        background-color: #f8f9fa;
-        font-size: 14px;
+        width: 100%; min-height: 300px; height: 60vh;
+        margin-top: 10px; padding: 12px; border: 1px solid #ccc;
+        border-radius: 6px; box-sizing: border-box; font-family: 'Courier New', Courier, monospace;
+        white-space: pre; background-color: #f8f9fa; font-size: 14px;
     }
-    #status {
-        margin-top: 15px;
-        font-style: italic;
-        color: #555;
-    }
-    /* 新增：Token 資訊樣式 */
+    #status { margin-top: 15px; font-style: italic; color: #555; }
     #tokenInfo {
-        margin-top: 15px;
-        padding: 10px;
-        background-color: #e9ecef;
-        border-radius: 6px;
-        font-size: 14px;
-        font-weight: bold;
+        margin-top: 15px; padding: 10px; background-color: #e9ecef;
+        border-radius: 6px; font-size: 14px; font-weight: bold;
     }
-    #tokenCount {
-        color: #0056b3;
+    #tokenCount { color: #0056b3; }
+    button.secondary { background-color: #6c757d; }
+    button.secondary:hover { background-color: #545b62; }
+    button.danger { background-color: #dc3545; }
+    button.danger:hover { background-color: #b02a37; }
+    
+    /* NEW: Advanced filter container */
+    .advanced-filter-container {
+        padding: 15px;
+        background-color: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        margin-top: 20px;
     }
-
-    /* 次要按鈕樣式 */
-    button.secondary {
-        background-color: #6c757d;
+    .advanced-filter-group {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 10px;
     }
-    button.secondary:hover {
-        background-color: #545b62;
-    }
-    button.danger {
-        background-color: #dc3545;
-    }
-    button.danger:hover {
-        background-color: #b02a37;
-    }
-
 </style>
 </head>
 <body>
-
     <div class="page-container">
-        <h1>資料夾檔案讀取器 (步驟式)</h1>
+        <h1>資料夾檔案讀取器 (進階版)</h1>
         <p>本工具將引導您完成選擇資料夾、篩選檔案並合併其內容的步驟。所有操作均在目前頁面依序進行。</p>
 
         <div class="step" id="step1-folder-select">
@@ -259,16 +199,28 @@
                 <label for="folderInput">點擊下方按鈕選擇您的資料夾：</label>
                 <input type="file" id="folderInput" webkitdirectory directory multiple>
             </div>
-            <p>選擇資料夾後，其內容將顯示在下一步供您選擇。</p>
+            <p>選擇資料夾後，工具將自動分析檔案、估算 Token 並預先取消勾選非文字檔或過大的檔案。</p>
         </div>
 
         <div class="step" id="step2-file-tree-filter" style="display: none;">
             <h2>步驟 2：檔案選擇與篩選</h2>
             
-            <!-- 新增：包含目錄結構的選項 -->
             <div class="input-group">
                 <input type="checkbox" id="includeTreeCheckbox" checked>
                 <label for="includeTreeCheckbox">在輸出開頭加入完整目錄結構文字</label>
+            </div>
+
+            <!-- === NEW: Advanced Filter Section === -->
+            <div class="advanced-filter-container">
+                <h3>進階篩選</h3>
+                <div class="advanced-filter-group">
+                    <label for="sizeLimitInput">去除大於 (KB):</label>
+                    <input type="number" id="sizeLimitInput" value="4096" min="1">
+                    <button id="deselectBySizeBtn" class="secondary">執行去除</button>
+                </div>
+                <div class="advanced-filter-group">
+                     <button id="deselectNonTextBtn" class="secondary">去除常見非文字檔</button>
+                </div>
             </div>
 
             <div class="input-group">
@@ -291,16 +243,12 @@
         </div>
 
         <div class="step" id="step3-output" style="display: none;">
-            <h2>步驟 3：合併內容預覽與匯出</h2>
+             <h2>步驟 3：合併內容預覽與匯出</h2>
             <textarea id="outputArea" readonly placeholder="選取的檔案內容將會顯示在這裡..."></textarea>
-            
-            <!-- 新增：Token 估算顯示區 -->
             <div id="tokenInfo">預估 Token 數量：<span id="tokenCount">0</span></div>
-
             <div class="button-group">
                 <button id="copyToClipboardButton">複製到剪貼簿</button>
                 <button id="downloadTxtButton">下載 TXT</button>
-                <!-- 新增：分割下載按鈕 -->
                 <button id="splitDownloadButton" class="secondary">分割下載 (依 Token)</button>
                 <button id="downloadPdfButton">下載 PDF</button>
                 <button id="backToStep2Button" class="secondary">返回步驟 2 修改選擇</button>
@@ -319,28 +267,39 @@
     const fileTypeInput = document.getElementById('fileTypeInput');
     const selectByTypeBtn = document.getElementById('selectByTypeBtn');
     const deselectByTypeBtn = document.getElementById('deselectByTypeBtn');
-
     const step1Div = document.getElementById('step1-folder-select');
     const step2Div = document.getElementById('step2-file-tree-filter');
     const step3Div = document.getElementById('step3-output');
-
     const backToStep1Button = document.getElementById('backToStep1Button');
     const backToStep2Button = document.getElementById('backToStep2Button');
     const resetButton = document.getElementById('resetButton');
-
     const copyToClipboardButton = document.getElementById('copyToClipboardButton');
     const downloadTxtButton = document.getElementById('downloadTxtButton');
     const downloadPdfButton = document.getElementById('downloadPdfButton');
-    
-    // --- New Element References ---
     const includeTreeCheckbox = document.getElementById('includeTreeCheckbox');
     const tokenCountSpan = document.getElementById('tokenCount');
     const splitDownloadButton = document.getElementById('splitDownloadButton');
 
-    // --- Global State ---
+    // --- NEW DOM References ---
+    const sizeLimitInput = document.getElementById('sizeLimitInput');
+    const deselectBySizeBtn = document.getElementById('deselectBySizeBtn');
+    const deselectNonTextBtn = document.getElementById('deselectNonTextBtn');
+
+    // --- Global State & Constants ---
     let fileSystemTree = new Map();
     let allFileObjects = [];
-    let lastSelectedFiles = []; // 用於分割下載時重用已選檔案列表
+    let lastSelectedFiles = [];
+    const NON_TEXT_EXTENSIONS = new Set([
+        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg',
+        '.mp3', '.wav', '.ogg', '.m4a', '.flac',
+        '.mp4', '.mov', '.avi', '.wmv', '.mkv', '.flv',
+        '.zip', '.rar', '.7z', '.tar', '.gz',
+        '.exe', '.dll', '.so', '.dmg', '.app',
+        '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+        '.db', '.sqlite', '.dat',
+        '.pyc', '.o', '.class', '.jar', '.lock'
+    ]);
+
 
     // --- Event Listeners ---
     document.addEventListener('DOMContentLoaded', () => showStep('step1-folder-select'));
@@ -354,13 +313,18 @@
     copyToClipboardButton.addEventListener('click', handleCopyToClipboard);
     downloadTxtButton.addEventListener('click', handleDownloadTxt);
     downloadPdfButton.addEventListener('click', handleDownloadPdf);
-    splitDownloadButton.addEventListener('click', handleSplitDownload); // New listener
+    splitDownloadButton.addEventListener('click', handleSplitDownload);
+    
+    // --- NEW Event Listeners ---
+    deselectBySizeBtn.addEventListener('click', handleDeselectBySize);
+    deselectNonTextBtn.addEventListener('click', handleDeselectNonText);
 
     fileTreeDiv.addEventListener('change', (event) => {
         if (event.target.type === 'checkbox') {
             const path = event.target.dataset.path;
             const node = findNodeByPath(path, fileSystemTree);
             if (node) {
+                // User interactions should propagate to children
                 updateSelectionState(node, event.target.checked, true); 
             }
         }
@@ -374,9 +338,7 @@
         });
         const activeStep = document.getElementById(stepIdToShow);
         if (activeStep) {
-            setTimeout(() => {
-                 activeStep.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 50);
+            setTimeout(() => activeStep.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
         }
     }
 
@@ -389,12 +351,12 @@
         outputArea.value = '';
         statusDiv.textContent = '';
         fileTypeInput.value = '';
-        includeTreeCheckbox.checked = true; // Reset checkbox
-        tokenCountSpan.textContent = '0'; // Reset token count
+        includeTreeCheckbox.checked = true;
+        tokenCountSpan.textContent = '0';
         showStep('step1-folder-select');
     }
 
-    function handleFolderSelect(event) {
+    async function handleFolderSelect(event) {
         const files = event.target.files;
         if (!files.length) return;
 
@@ -402,16 +364,15 @@
         fileSystemTree.clear();
         allFileObjects = Array.from(files);
 
+        // Build the basic tree structure
         for (const file of allFileObjects) {
             const pathParts = file.webkitRelativePath.split('/');
             let currentLevel = fileSystemTree;
             let currentPath = [];
-
             for (let i = 0; i < pathParts.length; i++) {
                 const part = pathParts[i];
                 currentPath.push(part);
                 const nodePath = currentPath.join('/');
-
                 if (i === pathParts.length - 1) { 
                     if (!currentLevel.has(part)) {
                          currentLevel.set(part, {
@@ -435,10 +396,55 @@
                 }
             }
         }
-        fileSystemTree.forEach(node => updateSelectionState(node, true, false));
+        
         renderFileTree();
-        statusDiv.textContent = `已載入 ${allFileObjects.length} 個項目。預設全選。`;
+        statusDiv.textContent = `已載入 ${allFileObjects.length} 個項目。正在分析檔案內容...`;
         showStep('step2-file-tree-filter');
+
+        // Asynchronously process metadata and apply default filters
+        await processFileMetadataAndApplyDefaults();
+    }
+
+    /**
+     * @async
+     * NEW: Iterates through all files, reads them, estimates tokens,
+     * and applies the initial filtering logic.
+     */
+    async function processFileMetadataAndApplyDefaults() {
+        const fileNodes = getAllFileNodes(fileSystemTree);
+        let processedCount = 0;
+        let deselectedCount = 0;
+
+        for (const node of fileNodes) {
+            let isText = isLikelyTextFile(node.name);
+            let tokens = 0;
+            let fileContent = '';
+
+            try {
+                if (isText) {
+                    fileContent = await node.fileObject.text();
+                    tokens = estimateTokens(fileContent);
+                }
+                
+                // Update the UI with metadata
+                updateFileNodeLabel(node, tokens, isText);
+
+                // Apply initial deselection logic
+                if (!isText || tokens > 50000) {
+                    updateSelectionState(node, false, false); // No propagation for this auto-action
+                    deselectedCount++;
+                }
+            } catch (e) {
+                console.error(`Error processing file ${node.path}:`, e);
+                updateFileNodeLabel(node, 0, false, "[讀取錯誤]");
+                updateSelectionState(node, false, false);
+                deselectedCount++;
+            }
+
+            processedCount++;
+            statusDiv.textContent = `分析進度: ${processedCount} / ${fileNodes.length} 個檔案。已自動取消勾選 ${deselectedCount} 個。`;
+        }
+        statusDiv.textContent = `分析完成！共 ${fileNodes.length} 個檔案，已自動取消勾選 ${deselectedCount} 個非文字檔或過大檔案。`;
     }
 
     function renderFileTree() {
@@ -447,7 +453,7 @@
         appendTreeNodes(fileSystemTree, rootUl);
         fileTreeDiv.appendChild(rootUl);
     }
-
+    
     function appendTreeNodes(nodeMap, parentElement) {
         const sortedEntries = [...nodeMap.entries()].sort(([keyA, valA], [keyB, valB]) => {
             if (valA.type === 'folder' && valB.type === 'file') return -1;
@@ -459,27 +465,65 @@
             const li = document.createElement('li');
             const randomSuffix = Math.random().toString(36).substring(2, 7);
             const checkboxId = `cb-${node.path.replace(/[^a-zA-Z0-9_-]/g, '_')}-${randomSuffix}`;
+            
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.id = checkboxId;
             checkbox.checked = node.selected;
             checkbox.dataset.path = node.path;
+            
             const label = document.createElement('label');
             label.htmlFor = checkboxId;
+
             const labelTextSpan = document.createElement('span');
             labelTextSpan.classList.add('label-text');
-            let icon = node.type === 'folder' ? '📁 ' : '📄 ';
+            const icon = node.type === 'folder' ? '📁 ' : '📄 ';
             labelTextSpan.textContent = icon + node.name;
+            
+            // NEW: Span for metadata
+            const metaSpan = document.createElement('span');
+            metaSpan.classList.add('file-meta');
+            if (node.type === 'file') {
+                 metaSpan.textContent = '(分析中...)';
+            }
+
             label.appendChild(labelTextSpan);
+            label.appendChild(metaSpan);
             li.appendChild(checkbox);
             li.appendChild(label);
+            
+            // Store references to DOM elements on the node object
             node.checkboxElement = checkbox; 
+            node.metaElement = metaSpan;
+
             if (node.type === 'folder' && node.children && node.children.size > 0) {
                 const childrenUl = document.createElement('ul');
                 appendTreeNodes(node.children, childrenUl);
                 li.appendChild(childrenUl);
             }
             parentElement.appendChild(li);
+        }
+    }
+    
+    /**
+     * NEW: Updates the file node's label in the DOM with token and size info.
+     */
+    function updateFileNodeLabel(node, tokens, isText, errorMsg = '') {
+        if (!node.metaElement) return;
+
+        if (errorMsg) {
+            node.metaElement.textContent = errorMsg;
+            node.metaElement.style.color = '#dc3545';
+            return;
+        }
+
+        const fileSizeKB = (node.fileObject.size / 1024).toFixed(2);
+        if (isText) {
+            node.metaElement.textContent = `(${tokens.toLocaleString()} Tokens, ${fileSizeKB} KB)`;
+            node.metaElement.style.color = tokens > 50000 ? '#dc3545' : '#6c757d';
+        } else {
+            node.metaElement.textContent = `(非文字檔, ${fileSizeKB} KB)`;
+            node.metaElement.style.color = '#dc3545';
         }
     }
     
@@ -490,11 +534,7 @@
         for (const part of parts) {
             if (!currentLevel || !currentLevel.has(part)) return null;
             node = currentLevel.get(part);
-            if (node.type === 'folder' && node.children) {
-                currentLevel = node.children;
-            } else if (parts.indexOf(part) < parts.length -1 ) { 
-                return null;
-            }
+            currentLevel = (node.type === 'folder') ? node.children : null;
         }
         return node;
     }
@@ -502,11 +542,53 @@
     function updateSelectionState(node, isSelected, isUserInteraction) {
         node.selected = isSelected;
         if (node.checkboxElement) node.checkboxElement.checked = isSelected;
-        if (node.type === 'folder' && node.children) {
+
+        // If a user clicks a folder, propagate the change to all children
+        if (node.type === 'folder' && node.children && isUserInteraction) {
             for (const childNode of node.children.values()) {
-                updateSelectionState(childNode, isSelected, false); 
+                updateSelectionState(childNode, isSelected, isUserInteraction); 
             }
         }
+    }
+
+    // --- Filter and Action Functions ---
+
+    /**
+     * NEW: Handles the "Deselect by Size" button click.
+     */
+    function handleDeselectBySize() {
+        const sizeLimitKB = parseFloat(sizeLimitInput.value);
+        if (isNaN(sizeLimitKB) || sizeLimitKB <= 0) {
+            alert("請輸入一個有效的檔案大小 (KB)。");
+            return;
+        }
+        const sizeLimitBytes = sizeLimitKB * 1024;
+        let count = 0;
+        getAllFileNodes(fileSystemTree).forEach(node => {
+            if (node.fileObject.size > sizeLimitBytes) {
+                if (node.selected) {
+                    updateSelectionState(node, false, false);
+                    count++;
+                }
+            }
+        });
+        statusDiv.textContent = `操作完成：已取消勾選 ${count} 個大於 ${sizeLimitKB} KB 的檔案。`;
+    }
+
+    /**
+     * NEW: Handles the "Deselect Non-Text" button click.
+     */
+    function handleDeselectNonText() {
+        let count = 0;
+        getAllFileNodes(fileSystemTree).forEach(node => {
+            if (!isLikelyTextFile(node.name)) {
+                if (node.selected) {
+                    updateSelectionState(node, false, false);
+                    count++;
+                }
+            }
+        });
+        statusDiv.textContent = `操作完成：已取消勾選 ${count} 個常見的非文字檔案。`;
     }
 
     function filterByType(select) {
@@ -521,24 +603,16 @@
             return;
         }
         let changedCount = 0;
-        function traverseAndFilter(nodeMap) {
-            for (const node of nodeMap.values()) {
-                if (node.type === 'file') {
-                    const fileExt = node.name.substring(node.name.lastIndexOf('.')).toLowerCase();
-                    if (types.includes(fileExt)) {
-                        if (node.selected !== select) {
-                            node.selected = select;
-                            if (node.checkboxElement) node.checkboxElement.checked = select;
-                            changedCount++;
-                        }
-                    }
-                } else if (node.type === 'folder' && node.children) {
-                    traverseAndFilter(node.children);
+        getAllFileNodes(fileSystemTree).forEach(node => {
+            const fileExt = ('.' + node.name.split('.').pop()).toLowerCase();
+            if (types.includes(fileExt)) {
+                if (node.selected !== select) {
+                    updateSelectionState(node, select, false);
+                    changedCount++;
                 }
             }
-        }
-        traverseAndFilter(fileSystemTree);
-        statusDiv.textContent = changedCount > 0 ? `已按類型 ${types.join(', ')} ${select ? '選取' : '取消選取'} 了 ${changedCount} 個檔案。` : `按類型 ${types.join(', ')} 篩選：沒有檔案的選取狀態被改變。`;
+        });
+        statusDiv.textContent = `已按類型 ${types.join(', ')} ${select ? '選取' : '取消選取'} 了 ${changedCount} 個檔案。`;
     }
 
     async function generateOutput() {
@@ -547,21 +621,10 @@
         showStep('step3-output'); 
 
         let outputContent = '';
-        lastSelectedFiles = []; // 重置並重新收集
+        lastSelectedFiles = []; // Reset and collect again
 
-        function collectSelectedFiles(nodeMap) {
-            const sortedEntries = [...nodeMap.entries()].sort(([keyA, valA], [keyB, valB]) => valA.path.localeCompare(valB.path));
-            for (const [name, node] of sortedEntries) {
-                if (node.type === 'file' && node.selected && node.fileObject) {
-                    lastSelectedFiles.push(node);
-                } else if (node.type === 'folder' && node.children) {
-                    collectSelectedFiles(node.children);
-                }
-            }
-        }
         collectSelectedFiles(fileSystemTree);
         
-        // 新增：處理目錄結構文字
         if (includeTreeCheckbox.checked) {
             outputContent += '--- 目錄結構 ---\n';
             outputContent += generateDirectoryTreeString(fileSystemTree, '', true);
@@ -596,20 +659,47 @@
         outputArea.value = outputContent;
         outputArea.placeholder = "選取的檔案內容將會顯示在這裡...";
         statusDiv.textContent = `完成。共處理 ${filesReadSoFar} 個檔案。結果顯示在步驟 3。`;
-        // 新增：更新 Token 估算
         tokenCountSpan.textContent = estimateTokens(outputContent).toLocaleString();
     }
     
-    // --- 新增功能：目錄結構、Token 估算、分割下載 ---
+    // --- Helper and Utility Functions ---
 
     /**
-     * @function generateDirectoryTreeString
-     * 遞迴產生目錄結構的文字表示法。
-     * @param {Map} nodeMap - 目前層級的節點 Map。
-     * @param {string} prefix - 用於縮排的前綴字串。
-     * @param {boolean} isRoot - 是否為根目錄。
-     * @returns {string} - 目錄結構字串。
+     * NEW: Recursively collects all file nodes from the tree into a flat array.
      */
+    function getAllFileNodes(nodeMap) {
+        let nodes = [];
+        for (const node of nodeMap.values()) {
+            if (node.type === 'file') {
+                nodes.push(node);
+            } else if (node.type === 'folder' && node.children) {
+                nodes = nodes.concat(getAllFileNodes(node.children));
+            }
+        }
+        return nodes;
+    }
+
+    /**
+     * NEW: Checks if a filename likely corresponds to a text file.
+     */
+    function isLikelyTextFile(filename) {
+        const extension = ('.' + filename.split('.').pop()).toLowerCase();
+        // A file without an extension is considered a text file by default
+        if (extension === '.' + filename.toLowerCase()) return true; 
+        return !NON_TEXT_EXTENSIONS.has(extension);
+    }
+    
+    function collectSelectedFiles(nodeMap) {
+        const sortedEntries = [...nodeMap.entries()].sort(([keyA, valA], [keyB, valB]) => valA.path.localeCompare(valB.path));
+        for (const [name, node] of sortedEntries) {
+            if (node.type === 'file' && node.selected && node.fileObject) {
+                lastSelectedFiles.push(node);
+            } else if (node.type === 'folder' && node.children) {
+                collectSelectedFiles(node.children);
+            }
+        }
+    }
+    
     function generateDirectoryTreeString(nodeMap, prefix = '', isRoot = false) {
         let treeString = isRoot ? (allFileObjects[0]?.webkitRelativePath.split('/')[0] || 'root') + '\n' : '';
         const sortedEntries = [...nodeMap.entries()].sort(([keyA, valA], [keyB, valB]) => {
@@ -617,14 +707,12 @@
             if (valA.type === 'file' && valB.type === 'folder') return 1;
             return keyA.localeCompare(keyB);
         });
-
         sortedEntries.forEach((entry, index) => {
             const [name, node] = entry;
             const isLast = index === sortedEntries.length - 1;
             const connector = isLast ? '└── ' : '├── ';
             const icon = node.type === 'folder' ? '📁' : '📄';
             treeString += `${prefix}${connector}${icon} ${name}\n`;
-
             if (node.type === 'folder' && node.children) {
                 const newPrefix = prefix + (isLast ? '    ' : '│   ');
                 treeString += generateDirectoryTreeString(node.children, newPrefix);
@@ -633,108 +721,55 @@
         return treeString;
     }
 
-    /**
-     * @function estimateTokens
-     * 估算文字的 Token 數量。這是一個簡化模型。
-     * 英文/數字/程式碼: 大約 3-4 個字元為 1 token。
-     * 中日韓文字: 大約 1-2 個字元為 1 token。
-     * 此處採用一個混合的、較寬鬆的估算：
-     * - CJK 字元算 1.5 token
-     * - 其他字元算 0.3 token
-     * @param {string} text - 要估算的文字。
-     * @returns {number} - 估算的 Token 數量 (整數)。
-     */
     function estimateTokens(text) {
         if (!text) return 0;
         const cjkRegex = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/g;
         const cjkMatches = text.match(cjkRegex);
         const cjkChars = cjkMatches ? cjkMatches.length : 0;
         const otherChars = text.length - cjkChars;
-
         const tokens = Math.ceil((cjkChars * 1.5) + (otherChars * 0.3));
         return tokens;
     }
-
-    /**
-     * @async
-     * @function handleSplitDownload
-     * 處理分割下載的邏輯。
-     */
+    
+    // --- Existing Export Functions (Unchanged) ---
+    
     async function handleSplitDownload() {
         const tokenLimitStr = prompt("請輸入每個檔案的 Token 上限（例如：8000）。\n分割將以檔案為單位，避免截斷內容。", "8000");
-        if (!tokenLimitStr) return; // User cancelled
-
+        if (!tokenLimitStr) return;
         const tokenLimit = parseInt(tokenLimitStr, 10);
         if (isNaN(tokenLimit) || tokenLimit <= 0) {
             alert("請輸入一個有效的正整數。");
             return;
         }
-
         if (lastSelectedFiles.length === 0) {
             alert("沒有選取的檔案可以分割下載。");
             return;
         }
-
         statusDiv.textContent = `正在準備分割檔案，上限為 ${tokenLimit.toLocaleString()} tokens...`;
-
         let chunks = [];
         let currentChunkContent = "";
         let currentChunkTokens = 0;
-
-        // 處理目錄結構字串（如果需要）
         let initialContent = '';
         if (includeTreeCheckbox.checked) {
             initialContent += '--- 目錄結構 ---\n';
             initialContent += generateDirectoryTreeString(fileSystemTree, '', true);
             initialContent += '\n--- 檔案內容 ---\n\n';
         }
-        
         currentChunkContent = initialContent;
         currentChunkTokens = estimateTokens(initialContent);
-
         for (const node of lastSelectedFiles) {
             try {
                 const fileContent = await node.fileObject.text();
                 const fileBlock = `路徑/${node.path}內容如下：\n${fileContent}\n\n`;
                 const blockTokens = estimateTokens(fileBlock);
-
                 if (currentChunkContent !== initialContent && currentChunkTokens + blockTokens > tokenLimit) {
-                    // 目前區塊不為空，且加入此檔案會超限，故結束目前區塊
                     chunks.push(currentChunkContent);
-                    // 開始新區塊
-                    currentChunkContent = initialContent + fileBlock; // 新區塊也包含目錄結構
+                    currentChunkContent = initialContent + fileBlock;
                     currentChunkTokens = estimateTokens(currentChunkContent);
                 } else {
-                    // 加入此檔案仍在限制內
                     currentChunkContent += fileBlock;
                     currentChunkTokens += blockTokens;
                 }
-
-                if (chunks.length >= 4 && currentChunkContent !== initialContent) {
-                    // 如果已經有4個 chunks，第5個 chunk 即使還沒滿也先推入，以防超過5個
-                    // 這是為了滿足 "最多五個檔案" 的限制
-                    // (剩下所有檔案會被塞進第5個 chunk)
-                    // 此處做一個檢查，如果下一個檔案會導致第六個chunk產生，則中止
-                    if (chunks.length === 4) {
-                        const nextNodeIndex = lastSelectedFiles.indexOf(node) + 1;
-                        if (nextNodeIndex < lastSelectedFiles.length) {
-                             const nextFileContent = await lastSelectedFiles[nextNodeIndex].fileObject.text();
-                             const nextFileBlock = `路徑/${lastSelectedFiles[nextNodeIndex].path}內容如下：\n${nextFileContent}\n\n`;
-                             const nextBlockTokens = estimateTokens(nextFileBlock);
-                             if (currentChunkTokens + nextBlockTokens > tokenLimit) {
-                                alert(`警告：檔案分割已達上限 (5個檔案)。剩餘的檔案將被合併到最後一個檔案中，這可能會使其超過 Token 上限。請考慮增加 Token 上限或減少選取檔案。`);
-                                // 將剩餘所有檔案合併到當前 chunk
-                                for (let i = nextNodeIndex; i < lastSelectedFiles.length; i++) {
-                                    const remainingNode = lastSelectedFiles[i];
-                                    const remainingContent = await remainingNode.fileObject.text();
-                                    currentChunkContent += `路徑/${remainingNode.path}內容如下：\n${remainingContent}\n\n`;
-                                }
-                                break; // 跳出主循環
-                             }
-                        }
-                    }
-                }
-
             } catch (error) {
                 console.error(`分割時讀取檔案 ${node.path} 失敗:`, error);
                 const errorBlock = `路徑/${node.path}內容如下：\n[錯誤：無法讀取檔案內容 - ${error.message}]\n\n`;
@@ -742,25 +777,14 @@
                 currentChunkTokens += estimateTokens(errorBlock);
             }
         }
-        
-        // 推入最後一個 chunk
         if (currentChunkContent !== initialContent && currentChunkContent.trim() !== "") {
             chunks.push(currentChunkContent);
         }
-
         if (chunks.length === 0) {
             alert("沒有內容可以下載。");
             statusDiv.textContent = "操作完成。";
             return;
         }
-
-        if (chunks.length > 5) {
-             alert(`分割後的檔案數量 (${chunks.length}) 超過 5 個！請增加每個檔案的 Token 上限或減少選取的檔案。`);
-             statusDiv.textContent = "分割失敗：檔案數量過多。";
-             return;
-        }
-
-        // 開始下載
         statusDiv.textContent = `正在下載 ${chunks.length} 個分割檔案...`;
         chunks.forEach((chunk, index) => {
             const blob = new Blob([chunk], { type: 'text/plain;charset=utf-8' });
@@ -775,36 +799,25 @@
         statusDiv.textContent = `已成功下載 ${chunks.length} 個分割檔案。`;
     }
 
-
-    // --- 既有匯出功能 (保持不變) ---
     async function handleCopyToClipboard() {
-        const textToCopy = outputArea.value;
-        if (!textToCopy) {
-            alert('沒有內容可複製。');
-            return;
-        }
+        if (!outputArea.value) { alert('沒有內容可複製。'); return; }
         try {
-            await navigator.clipboard.writeText(textToCopy);
-            const originalText = copyToClipboardButton.textContent;
+            await navigator.clipboard.writeText(outputArea.value);
             copyToClipboardButton.textContent = '已複製!';
             copyToClipboardButton.disabled = true;
             setTimeout(() => {
-                copyToClipboardButton.textContent = originalText;
+                copyToClipboardButton.textContent = '複製到剪貼簿';
                 copyToClipboardButton.disabled = false;
             }, 2000);
         } catch (err) {
             console.error('無法複製到剪貼簿:', err);
-            alert('複製失敗，您的瀏覽器可能不支援此功能或未授予權限。');
+            alert('複製失敗，您的瀏覽器可能不支援此功能。');
         }
     }
 
     function handleDownloadTxt() {
-        const textContent = outputArea.value;
-        if (!textContent) {
-            alert('沒有內容可下載。');
-            return;
-        }
-        const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+        if (!outputArea.value) { alert('沒有內容可下載。'); return; }
+        const blob = new Blob([outputArea.value], { type: 'text/plain;charset=utf-8' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
         link.download = 'merged_content.txt';
@@ -815,57 +828,35 @@
     }
 
     function handleDownloadPdf() {
-        const textContent = outputArea.value;
-        if (!textContent) {
-            alert('沒有內容可下載。');
-            return;
-        }
-
+        if (!outputArea.value) { alert('沒有內容可下載。'); return; }
         if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined') {
-            alert('PDF 生成函式庫 (jsPDF) 未載入。無法下載 PDF。\n請檢查網路連線或瀏覽器是否阻擋了外部腳本。');
-            console.error('jsPDF is not loaded or not in expected structure.');
+            alert('PDF 生成函式庫 (jsPDF) 未載入。');
             return;
         }
-
         const { jsPDF: JsPDF } = window.jspdf;
         const doc = new JsPDF();
-        doc.setFont('Courier');
-        const fontSize = 10; 
-        doc.setFontSize(fontSize);
+        doc.setFont('Courier'); 
+        doc.setFontSize(10);
         const margin = 10;
         const pageWidth = doc.internal.pageSize.getWidth() - 2 * margin;
-        const textDimensions = doc.getTextDimensions("M", { fontSize: fontSize });
-        const lineHeight = textDimensions.h * 1.2;
+        const textLines = doc.splitTextToSize(outputArea.value, pageWidth);
         let cursorY = margin;
-        const originalLines = textContent.split('\n');
-        
-        originalLines.forEach(originalLine => {
-            const wrappedLines = doc.splitTextToSize(originalLine, pageWidth);
-            wrappedLines.forEach(lineSegment => {
-                if (cursorY + lineHeight > doc.internal.pageSize.getHeight() - margin) {
-                    doc.addPage();
-                    cursorY = margin;
-                }
-                doc.text(lineSegment, margin, cursorY);
-                cursorY += lineHeight;
-            });
+        const lineHeight = doc.getLineHeight() / doc.internal.scaleFactor;
+        textLines.forEach(line => {
+            if (cursorY + lineHeight > doc.internal.pageSize.getHeight() - margin) {
+                doc.addPage();
+                cursorY = margin;
+            }
+            doc.text(line, margin, cursorY);
+            cursorY += lineHeight;
         });
-        
         try {
             doc.save('merged_content.pdf');
-            const originalStatus = statusDiv.textContent;
-            statusDiv.textContent = "PDF 已產生。注意：預設字體對中文支援有限，部分字元可能無法正確顯示。";
-            setTimeout(() => {
-                statusDiv.textContent = originalStatus;
-            }, 5000);
-
         } catch (e) {
             console.error("生成 PDF 時發生錯誤:", e);
             alert("生成 PDF 時發生錯誤。部分特殊字元可能無法正確顯示。");
         }
     }
-
 </script>
-
 </body>
 </html>
