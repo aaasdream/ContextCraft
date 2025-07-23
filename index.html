@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>資料夾檔案讀取器 (進階版)</title>
+<title>資料夾檔案讀取器 (最終修正版)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
     body {
@@ -66,7 +66,6 @@
         font-size: 15px;
         box-sizing: border-box;
     }
-    /* Specific width for number input */
     .advanced-filter-group input[type="number"] {
         width: 120px;
         margin-right: 10px;
@@ -95,7 +94,7 @@
         display: flex;
         gap: 10px;
         flex-wrap: wrap;
-        align-items: center; /* Align items vertically */
+        align-items: center;
     }
     .type-filter button { background-color: #17a2b8; }
     .type-filter button:hover { background-color: #117a8b; }
@@ -171,7 +170,6 @@
     button.danger { background-color: #dc3545; }
     button.danger:hover { background-color: #b02a37; }
     
-    /* NEW: Advanced filter container */
     .advanced-filter-container {
         padding: 15px;
         background-color: #f8f9fa;
@@ -190,14 +188,17 @@
 </head>
 <body>
     <div class="page-container">
-        <h1>資料夾檔案讀取器 (進階版)</h1>
+        <h1>資料夾檔案讀取器 (最終修正版)</h1>
         <p>本工具將引導您完成選擇資料夾、篩選檔案並合併其內容的步驟。所有操作均在目前頁面依序進行。</p>
 
         <div class="step" id="step1-folder-select">
             <h2>步驟 1：選擇資料夾</h2>
             <div class="input-group">
                 <label for="folderInput">點擊下方按鈕選擇您的資料夾：</label>
-                <input type="file" id="folderInput" webkitdirectory directory multiple>
+                <!-- --- 修改：將 input 包在 container 中 --- -->
+                <div id="folderInputContainer">
+                    <input type="file" id="folderInput" webkitdirectory directory multiple>
+                </div>
             </div>
             <p>選擇資料夾後，工具將自動分析檔案、估算 Token 並預先取消勾選非文字檔或過大的檔案。</p>
         </div>
@@ -210,7 +211,6 @@
                 <label for="includeTreeCheckbox">在輸出開頭加入完整目錄結構文字</label>
             </div>
 
-            <!-- === NEW: Advanced Filter Section === -->
             <div class="advanced-filter-container">
                 <h3>進階篩選</h3>
                 <div class="advanced-filter-group">
@@ -247,6 +247,7 @@
             <textarea id="outputArea" readonly placeholder="選取的檔案內容將會顯示在這裡..."></textarea>
             <div id="tokenInfo">預估 Token 數量：<span id="tokenCount">0</span></div>
             <div class="button-group">
+                <button id="startUpdateFlowButton" class="secondary">更新內容 (需重選資料夾)</button>
                 <button id="copyToClipboardButton">複製到剪貼簿</button>
                 <button id="downloadTxtButton">下載 TXT</button>
                 <button id="splitDownloadButton" class="secondary">分割下載 (依 Token)</button>
@@ -258,8 +259,8 @@
     </div>
 
 <script>
-    // --- DOM Element References ---
-    const folderInput = document.getElementById('folderInput');
+    // --- DOM Element References (Initial) ---
+    // Note: folderInputElement is now managed dynamically
     const fileTreeDiv = document.getElementById('fileTree');
     const processButton = document.getElementById('processButton');
     const outputArea = document.getElementById('outputArea');
@@ -279,16 +280,19 @@
     const includeTreeCheckbox = document.getElementById('includeTreeCheckbox');
     const tokenCountSpan = document.getElementById('tokenCount');
     const splitDownloadButton = document.getElementById('splitDownloadButton');
-
-    // --- NEW DOM References ---
     const sizeLimitInput = document.getElementById('sizeLimitInput');
     const deselectBySizeBtn = document.getElementById('deselectBySizeBtn');
     const deselectNonTextBtn = document.getElementById('deselectNonTextBtn');
+    const startUpdateFlowButton = document.getElementById('startUpdateFlowButton');
+
 
     // --- Global State & Constants ---
+    let folderInputElement; // This will now be dynamically assigned
     let fileSystemTree = new Map();
     let allFileObjects = [];
     let lastSelectedFiles = [];
+    let savedSelectionState = null;
+    
     const NON_TEXT_EXTENSIONS = new Set([
         '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg',
         '.mp3', '.wav', '.ogg', '.m4a', '.flac',
@@ -302,8 +306,11 @@
 
 
     // --- Event Listeners ---
-    document.addEventListener('DOMContentLoaded', () => showStep('step1-folder-select'));
-    folderInput.addEventListener('change', handleFolderSelect);
+    document.addEventListener('DOMContentLoaded', () => {
+        reinitFolderInput(); // Initialize the input for the first time
+        showStep('step1-folder-select');
+    });
+    
     processButton.addEventListener('click', generateOutput);
     selectByTypeBtn.addEventListener('click', () => filterByType(true));
     deselectByTypeBtn.addEventListener('click', () => filterByType(false));
@@ -314,23 +321,49 @@
     downloadTxtButton.addEventListener('click', handleDownloadTxt);
     downloadPdfButton.addEventListener('click', handleDownloadPdf);
     splitDownloadButton.addEventListener('click', handleSplitDownload);
-    
-    // --- NEW Event Listeners ---
     deselectBySizeBtn.addEventListener('click', handleDeselectBySize);
     deselectNonTextBtn.addEventListener('click', handleDeselectNonText);
+    startUpdateFlowButton.addEventListener('click', startUpdateFlow);
 
     fileTreeDiv.addEventListener('change', (event) => {
         if (event.target.type === 'checkbox') {
             const path = event.target.dataset.path;
             const node = findNodeByPath(path, fileSystemTree);
             if (node) {
-                // User interactions should propagate to children
                 updateSelectionState(node, event.target.checked, true); 
             }
         }
     });
 
     // --- Core Functions ---
+
+    // --- 新增：銷毀並重建檔案輸入元件的核心函式 ---
+    function reinitFolderInput() {
+        const container = document.getElementById('folderInputContainer');
+        if (!container) return;
+
+        // 移除舊的監聽器以防記憶體洩漏
+        if (folderInputElement) {
+            folderInputElement.removeEventListener('change', handleFolderSelect);
+        }
+
+        container.innerHTML = ''; // 清空容器
+
+        const newInput = document.createElement('input');
+        newInput.type = 'file';
+        newInput.id = 'folderInput';
+        newInput.webkitdirectory = true;
+        newInput.directory = true;
+        newInput.multiple = true;
+        
+        container.appendChild(newInput);
+        
+        // 更新全域變數，使其指向新的元件
+        folderInputElement = newInput;
+        
+        // 為新的元件綁定事件監聽器
+        folderInputElement.addEventListener('change', handleFolderSelect);
+    }
 
     function showStep(stepIdToShow) {
         [step1Div, step2Div, step3Div].forEach(step => {
@@ -343,28 +376,32 @@
     }
 
     function resetAndGoToStep1() {
-        folderInput.value = ""; 
         fileSystemTree.clear();
         allFileObjects = [];
         lastSelectedFiles = [];
+        savedSelectionState = null;
         fileTreeDiv.innerHTML = '請先在步驟 1 選擇一個資料夾';
         outputArea.value = '';
         statusDiv.textContent = '';
         fileTypeInput.value = '';
         includeTreeCheckbox.checked = true;
         tokenCountSpan.textContent = '0';
+        
+        reinitFolderInput(); // 重置時也重建輸入框，確保下次是乾淨的
         showStep('step1-folder-select');
     }
-
+    
     async function handleFolderSelect(event) {
         const files = event.target.files;
-        if (!files.length) return;
-
-        statusDiv.textContent = '正在建立檔案樹...';
+        if (!files.length) {
+            savedSelectionState = null; 
+            return;
+        }
+        
+        statusDiv.textContent = '正在讀取最新檔案並建立檔案樹...';
         fileSystemTree.clear();
         allFileObjects = Array.from(files);
 
-        // Build the basic tree structure
         for (const file of allFileObjects) {
             const pathParts = file.webkitRelativePath.split('/');
             let currentLevel = fileSystemTree;
@@ -398,53 +435,96 @@
         }
         
         renderFileTree();
-        statusDiv.textContent = `已載入 ${allFileObjects.length} 個項目。正在分析檔案內容...`;
-        showStep('step2-file-tree-filter');
+        
+        if (savedSelectionState) {
+            statusDiv.textContent = '正在恢復您先前的選擇...';
+            await restoreSelectionState(savedSelectionState);
+            savedSelectionState = null; 
+            await generateOutput(); 
+        } else {
+            statusDiv.textContent = `已載入 ${allFileObjects.length} 個項目。正在分析檔案內容...`;
+            showStep('step2-file-tree-filter');
+            await processFileMetadataAndApplyDefaults();
+        }
+    }
 
-        // Asynchronously process metadata and apply default filters
+    function startUpdateFlow() {
+        statusDiv.textContent = '正在保存當前選擇狀態...';
+        const selectedPaths = new Set();
+        getAllFileNodes(fileSystemTree).forEach(node => {
+            if (node.selected) {
+                selectedPaths.add(node.path);
+            }
+        });
+        
+        savedSelectionState = {
+            paths: selectedPaths,
+            includeTree: includeTreeCheckbox.checked
+        };
+        
+        statusDiv.textContent = '請重新選擇同一個資料夾以載入最新內容。';
+        reinitFolderInput(); // 銷毀舊輸入框，建立新輸入框
+        folderInputElement.click(); // 觸發新輸入框的點擊事件
+    }
+    
+    async function restoreSelectionState(state) {
+        includeTreeCheckbox.checked = state.includeTree;
+        
+        getAllFileNodes(fileSystemTree).forEach(node => {
+            if (!state.paths.has(node.path)) {
+                updateSelectionState(node, false, false);
+            } else {
+                updateSelectionState(node, true, false); // 確保之前選中的是選中狀態
+            }
+        });
+
         await processFileMetadataAndApplyDefaults();
     }
 
-    /**
-     * @async
-     * NEW: Iterates through all files, reads them, estimates tokens,
-     * and applies the initial filtering logic.
-     */
+
     async function processFileMetadataAndApplyDefaults() {
         const fileNodes = getAllFileNodes(fileSystemTree);
         let processedCount = 0;
+        
+        const applyAutoDeselection = !savedSelectionState; 
         let deselectedCount = 0;
 
         for (const node of fileNodes) {
             let isText = isLikelyTextFile(node.name);
             let tokens = 0;
-            let fileContent = '';
 
             try {
                 if (isText) {
-                    fileContent = await node.fileObject.text();
+                    const fileContent = await node.fileObject.text();
                     tokens = estimateTokens(fileContent);
                 }
                 
-                // Update the UI with metadata
                 updateFileNodeLabel(node, tokens, isText);
 
-                // Apply initial deselection logic
-                if (!isText || tokens > 50000) {
-                    updateSelectionState(node, false, false); // No propagation for this auto-action
+                if (applyAutoDeselection && (!isText || tokens > 50000)) {
+                    updateSelectionState(node, false, false); 
                     deselectedCount++;
                 }
             } catch (e) {
                 console.error(`Error processing file ${node.path}:`, e);
                 updateFileNodeLabel(node, 0, false, "[讀取錯誤]");
-                updateSelectionState(node, false, false);
-                deselectedCount++;
+                if (applyAutoDeselection) {
+                    updateSelectionState(node, false, false);
+                    deselectedCount++;
+                }
             }
 
             processedCount++;
-            statusDiv.textContent = `分析進度: ${processedCount} / ${fileNodes.length} 個檔案。已自動取消勾選 ${deselectedCount} 個。`;
+            const statusMsg = applyAutoDeselection ? 
+                `分析進度: ${processedCount}/${fileNodes.length}。已自動取消勾選 ${deselectedCount} 個。` :
+                `正在重新分析檔案: ${processedCount} / ${fileNodes.length}`;
+            statusDiv.textContent = statusMsg;
         }
-        statusDiv.textContent = `分析完成！共 ${fileNodes.length} 個檔案，已自動取消勾選 ${deselectedCount} 個非文字檔或過大檔案。`;
+        
+        const finalStatusMsg = applyAutoDeselection ?
+            `分析完成！共 ${fileNodes.length} 個檔案，已自動取消勾選 ${deselectedCount} 個非文字檔或過大檔案。` :
+            `所有檔案重新分析完成。`;
+        statusDiv.textContent = finalStatusMsg;
     }
 
     function renderFileTree() {
@@ -480,7 +560,6 @@
             const icon = node.type === 'folder' ? '📁 ' : '📄 ';
             labelTextSpan.textContent = icon + node.name;
             
-            // NEW: Span for metadata
             const metaSpan = document.createElement('span');
             metaSpan.classList.add('file-meta');
             if (node.type === 'file') {
@@ -492,7 +571,6 @@
             li.appendChild(checkbox);
             li.appendChild(label);
             
-            // Store references to DOM elements on the node object
             node.checkboxElement = checkbox; 
             node.metaElement = metaSpan;
 
@@ -505,9 +583,6 @@
         }
     }
     
-    /**
-     * NEW: Updates the file node's label in the DOM with token and size info.
-     */
     function updateFileNodeLabel(node, tokens, isText, errorMsg = '') {
         if (!node.metaElement) return;
 
@@ -543,7 +618,6 @@
         node.selected = isSelected;
         if (node.checkboxElement) node.checkboxElement.checked = isSelected;
 
-        // If a user clicks a folder, propagate the change to all children
         if (node.type === 'folder' && node.children && isUserInteraction) {
             for (const childNode of node.children.values()) {
                 updateSelectionState(childNode, isSelected, isUserInteraction); 
@@ -553,9 +627,6 @@
 
     // --- Filter and Action Functions ---
 
-    /**
-     * NEW: Handles the "Deselect by Size" button click.
-     */
     function handleDeselectBySize() {
         const sizeLimitKB = parseFloat(sizeLimitInput.value);
         if (isNaN(sizeLimitKB) || sizeLimitKB <= 0) {
@@ -575,9 +646,6 @@
         statusDiv.textContent = `操作完成：已取消勾選 ${count} 個大於 ${sizeLimitKB} KB 的檔案。`;
     }
 
-    /**
-     * NEW: Handles the "Deselect Non-Text" button click.
-     */
     function handleDeselectNonText() {
         let count = 0;
         getAllFileNodes(fileSystemTree).forEach(node => {
@@ -621,7 +689,7 @@
         showStep('step3-output'); 
 
         let outputContent = '';
-        lastSelectedFiles = []; // Reset and collect again
+        lastSelectedFiles = [];
 
         collectSelectedFiles(fileSystemTree);
         
@@ -658,15 +726,12 @@
 
         outputArea.value = outputContent;
         outputArea.placeholder = "選取的檔案內容將會顯示在這裡...";
-        statusDiv.textContent = `完成。共處理 ${filesReadSoFar} 個檔案。結果顯示在步驟 3。`;
+        statusDiv.textContent = `完成。共處理 ${filesReadSoFar} 個檔案。內容已更新。`;
         tokenCountSpan.textContent = estimateTokens(outputContent).toLocaleString();
     }
     
     // --- Helper and Utility Functions ---
 
-    /**
-     * NEW: Recursively collects all file nodes from the tree into a flat array.
-     */
     function getAllFileNodes(nodeMap) {
         let nodes = [];
         for (const node of nodeMap.values()) {
@@ -679,12 +744,8 @@
         return nodes;
     }
 
-    /**
-     * NEW: Checks if a filename likely corresponds to a text file.
-     */
     function isLikelyTextFile(filename) {
         const extension = ('.' + filename.split('.').pop()).toLowerCase();
-        // A file without an extension is considered a text file by default
         if (extension === '.' + filename.toLowerCase()) return true; 
         return !NON_TEXT_EXTENSIONS.has(extension);
     }
@@ -731,7 +792,7 @@
         return tokens;
     }
     
-    // --- Existing Export Functions (Unchanged) ---
+    // --- Export Functions ---
     
     async function handleSplitDownload() {
         const tokenLimitStr = prompt("請輸入每個檔案的 Token 上限（例如：8000）。\n分割將以檔案為單位，避免截斷內容。", "8000");
