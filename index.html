@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>資料夾檔案讀取器 (最終修正版)</title>
+<title>資料夾檔案讀取器 (2.0)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
     body {
@@ -195,12 +195,11 @@
             <h2>步驟 1：選擇資料夾</h2>
             <div class="input-group">
                 <label for="folderInput">點擊下方按鈕選擇您的資料夾：</label>
-                <!-- --- 修改：將 input 包在 container 中 --- -->
                 <div id="folderInputContainer">
                     <input type="file" id="folderInput" webkitdirectory directory multiple>
                 </div>
             </div>
-            <p>選擇資料夾後，工具將自動分析檔案、估算 Token 並預先取消勾選非文字檔或過大的檔案。</p>
+            <p>選擇資料夾後，工具將自動分析檔案、估算 Token 並預先取消勾選非文字檔、過大、隱藏或符合 `Aking-ignore.txt` 規則的檔案。</p>
         </div>
 
         <div class="step" id="step2-file-tree-filter" style="display: none;">
@@ -220,6 +219,7 @@
                 </div>
                 <div class="advanced-filter-group">
                      <button id="deselectNonTextBtn" class="secondary">去除常見非文字檔</button>
+                     <button id="downloadIgnoreFileBtnStep2" class="secondary">產生並下載 Aking-ignore</button>
                 </div>
             </div>
 
@@ -252,6 +252,7 @@
                 <button id="downloadTxtButton">下載 TXT</button>
                 <button id="splitDownloadButton" class="secondary">分割下載 (依 Token)</button>
                 <button id="downloadPdfButton">下載 PDF</button>
+                <button id="downloadIgnoreFileBtnStep3" class="secondary">產生並下載 Aking-ignore</button>
                 <button id="backToStep2Button" class="secondary">返回步驟 2 修改選擇</button>
                 <button id="resetButton" class="danger">全部重來 (返回步驟 1)</button>
             </div>
@@ -259,8 +260,7 @@
     </div>
 
 <script>
-    // --- DOM Element References (Initial) ---
-    // Note: folderInputElement is now managed dynamically
+    // --- DOM Element References ---
     const fileTreeDiv = document.getElementById('fileTree');
     const processButton = document.getElementById('processButton');
     const outputArea = document.getElementById('outputArea');
@@ -284,10 +284,12 @@
     const deselectBySizeBtn = document.getElementById('deselectBySizeBtn');
     const deselectNonTextBtn = document.getElementById('deselectNonTextBtn');
     const startUpdateFlowButton = document.getElementById('startUpdateFlowButton');
+    const downloadIgnoreFileBtnStep2 = document.getElementById('downloadIgnoreFileBtnStep2');
+    const downloadIgnoreFileBtnStep3 = document.getElementById('downloadIgnoreFileBtnStep3');
 
 
     // --- Global State & Constants ---
-    let folderInputElement; // This will now be dynamically assigned
+    let folderInputElement;
     let fileSystemTree = new Map();
     let allFileObjects = [];
     let lastSelectedFiles = [];
@@ -307,7 +309,7 @@
 
     // --- Event Listeners ---
     document.addEventListener('DOMContentLoaded', () => {
-        reinitFolderInput(); // Initialize the input for the first time
+        reinitFolderInput();
         showStep('step1-folder-select');
     });
     
@@ -324,12 +326,15 @@
     deselectBySizeBtn.addEventListener('click', handleDeselectBySize);
     deselectNonTextBtn.addEventListener('click', handleDeselectNonText);
     startUpdateFlowButton.addEventListener('click', startUpdateFlow);
+    downloadIgnoreFileBtnStep2.addEventListener('click', handleDownloadIgnoreFile);
+    downloadIgnoreFileBtnStep3.addEventListener('click', handleDownloadIgnoreFile);
 
     fileTreeDiv.addEventListener('change', (event) => {
         if (event.target.type === 'checkbox') {
             const path = event.target.dataset.path;
             const node = findNodeByPath(path, fileSystemTree);
             if (node) {
+                // --- BUG FIX: Pass 'true' to ensure the interaction propagates ---
                 updateSelectionState(node, event.target.checked, true); 
             }
         }
@@ -337,31 +342,21 @@
 
     // --- Core Functions ---
 
-    // --- 新增：銷毀並重建檔案輸入元件的核心函式 ---
     function reinitFolderInput() {
         const container = document.getElementById('folderInputContainer');
         if (!container) return;
-
-        // 移除舊的監聽器以防記憶體洩漏
         if (folderInputElement) {
             folderInputElement.removeEventListener('change', handleFolderSelect);
         }
-
-        container.innerHTML = ''; // 清空容器
-
+        container.innerHTML = '';
         const newInput = document.createElement('input');
         newInput.type = 'file';
         newInput.id = 'folderInput';
         newInput.webkitdirectory = true;
         newInput.directory = true;
         newInput.multiple = true;
-        
         container.appendChild(newInput);
-        
-        // 更新全域變數，使其指向新的元件
         folderInputElement = newInput;
-        
-        // 為新的元件綁定事件監聽器
         folderInputElement.addEventListener('change', handleFolderSelect);
     }
 
@@ -386,8 +381,7 @@
         fileTypeInput.value = '';
         includeTreeCheckbox.checked = true;
         tokenCountSpan.textContent = '0';
-        
-        reinitFolderInput(); // 重置時也重建輸入框，確保下次是乾淨的
+        reinitFolderInput();
         showStep('step1-folder-select');
     }
     
@@ -414,14 +408,16 @@
                     if (!currentLevel.has(part)) {
                          currentLevel.set(part, {
                             name: part, type: 'file', path: nodePath,
-                            fileObject: file, selected: true, children: null
+                            fileObject: file, selected: true, children: null,
+                            webkitRelativePath: file.webkitRelativePath // Add relative path
                         });
                     }
                 } else { 
                     if (!currentLevel.has(part)) {
                         currentLevel.set(part, {
                             name: part, type: 'folder', path: nodePath,
-                            selected: true, children: new Map()
+                            selected: true, children: new Map(),
+                            webkitRelativePath: currentPath.slice(0, i + 1).join('/') // Add relative path
                         });
                     }
                     if (currentLevel.get(part).type === 'file') { 
@@ -451,7 +447,7 @@
     function startUpdateFlow() {
         statusDiv.textContent = '正在保存當前選擇狀態...';
         const selectedPaths = new Set();
-        getAllFileNodes(fileSystemTree).forEach(node => {
+        getAllNodes(fileSystemTree, true).forEach(node => { 
             if (node.selected) {
                 selectedPaths.add(node.path);
             }
@@ -463,68 +459,87 @@
         };
         
         statusDiv.textContent = '請重新選擇同一個資料夾以載入最新內容。';
-        reinitFolderInput(); // 銷毀舊輸入框，建立新輸入框
-        folderInputElement.click(); // 觸發新輸入框的點擊事件
+        reinitFolderInput();
+        folderInputElement.click();
     }
     
     async function restoreSelectionState(state) {
         includeTreeCheckbox.checked = state.includeTree;
         
-        getAllFileNodes(fileSystemTree).forEach(node => {
+        getAllNodes(fileSystemTree, true).forEach(node => {
             if (!state.paths.has(node.path)) {
                 updateSelectionState(node, false, false);
             } else {
-                updateSelectionState(node, true, false); // 確保之前選中的是選中狀態
+                updateSelectionState(node, true, false);
             }
         });
-
         await processFileMetadataAndApplyDefaults();
     }
 
-
     async function processFileMetadataAndApplyDefaults() {
-        const fileNodes = getAllFileNodes(fileSystemTree);
+        const allNodes = getAllNodes(fileSystemTree, true);
         let processedCount = 0;
+        
+        let ignorePatterns = new Set();
+        const rootFolderPrefix = allFileObjects.length > 0 ? allFileObjects[0].webkitRelativePath.split('/')[0] + '/' : '';
+        const ignoreFile = allFileObjects.find(f => f.webkitRelativePath === rootFolderPrefix + 'Aking-ignore.txt');
+
+        if(ignoreFile) {
+            try {
+                const ignoreContent = await ignoreFile.text();
+                ignorePatterns = new Set(ignoreContent.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#')));
+                statusDiv.textContent = '已成功讀取 Aking-ignore.txt 規則。';
+            } catch (e) {
+                statusDiv.textContent = '讀取 Aking-ignore.txt 檔案失敗。';
+            }
+        }
         
         const applyAutoDeselection = !savedSelectionState; 
         let deselectedCount = 0;
 
-        for (const node of fileNodes) {
-            let isText = isLikelyTextFile(node.name);
-            let tokens = 0;
+        for (const node of allNodes) {
+            let shouldDeselect = false;
+            const pathParts = node.webkitRelativePath.split('/');
+            
+            if (pathParts.some(part => part.startsWith('.') && part.length > 1)) { // Ignore dotfiles/folders
+                shouldDeselect = true;
+            } else if (pathParts.some(part => ignorePatterns.has(part))) { // Ignore via .Aking-ignore
+                shouldDeselect = true;
+            }
 
-            try {
-                if (isText) {
-                    const fileContent = await node.fileObject.text();
-                    tokens = estimateTokens(fileContent);
-                }
-                
-                updateFileNodeLabel(node, tokens, isText);
-
-                if (applyAutoDeselection && (!isText || tokens > 50000)) {
-                    updateSelectionState(node, false, false); 
-                    deselectedCount++;
-                }
-            } catch (e) {
-                console.error(`Error processing file ${node.path}:`, e);
-                updateFileNodeLabel(node, 0, false, "[讀取錯誤]");
-                if (applyAutoDeselection) {
-                    updateSelectionState(node, false, false);
-                    deselectedCount++;
+            if (node.type === 'file') {
+                let isText = isLikelyTextFile(node.name);
+                let tokens = 0;
+                try {
+                    if (isText) {
+                        const fileContent = await node.fileObject.text();
+                        tokens = estimateTokens(fileContent);
+                    }
+                    updateFileNodeLabel(node, tokens, isText);
+                    if (!shouldDeselect) {
+                        if (!isText || tokens > 50000) { shouldDeselect = true; }
+                    }
+                } catch (e) {
+                    console.error(`Error processing file ${node.path}:`, e);
+                    updateFileNodeLabel(node, 0, false, "[讀取錯誤]");
+                    shouldDeselect = true;
                 }
             }
 
+            if (applyAutoDeselection && shouldDeselect) {
+                if (node.selected) {
+                    updateSelectionState(node, false, false); 
+                    deselectedCount++;
+                }
+            }
             processedCount++;
-            const statusMsg = applyAutoDeselection ? 
-                `分析進度: ${processedCount}/${fileNodes.length}。已自動取消勾選 ${deselectedCount} 個。` :
-                `正在重新分析檔案: ${processedCount} / ${fileNodes.length}`;
-            statusDiv.textContent = statusMsg;
         }
         
-        const finalStatusMsg = applyAutoDeselection ?
-            `分析完成！共 ${fileNodes.length} 個檔案，已自動取消勾選 ${deselectedCount} 個非文字檔或過大檔案。` :
-            `所有檔案重新分析完成。`;
-        statusDiv.textContent = finalStatusMsg;
+        if (applyAutoDeselection) {
+            statusDiv.textContent = `分析完成！共 ${allNodes.length} 個項目，已自動取消勾選 ${deselectedCount} 個不符合條件的項目。`;
+        } else {
+             statusDiv.textContent = `所有檔案重新分析完成。`;
+        }
     }
 
     function renderFileTree() {
@@ -585,13 +600,11 @@
     
     function updateFileNodeLabel(node, tokens, isText, errorMsg = '') {
         if (!node.metaElement) return;
-
         if (errorMsg) {
             node.metaElement.textContent = errorMsg;
             node.metaElement.style.color = '#dc3545';
             return;
         }
-
         const fileSizeKB = (node.fileObject.size / 1024).toFixed(2);
         if (isText) {
             node.metaElement.textContent = `(${tokens.toLocaleString()} Tokens, ${fileSizeKB} KB)`;
@@ -614,18 +627,73 @@
         return node;
     }
     
+    // --- BUG FIX: Rewritten recursive update function for reliability ---
     function updateSelectionState(node, isSelected, isUserInteraction) {
         node.selected = isSelected;
-        if (node.checkboxElement) node.checkboxElement.checked = isSelected;
+        if (node.checkboxElement) {
+            node.checkboxElement.checked = isSelected;
+        }
 
+        // If the change was made by a user on a folder, propagate it down forcefully.
         if (node.type === 'folder' && node.children && isUserInteraction) {
             for (const childNode of node.children.values()) {
-                updateSelectionState(childNode, isSelected, isUserInteraction); 
+                // The 'true' here is crucial to continue the recursive chain.
+                updateSelectionState(childNode, isSelected, true); 
             }
         }
     }
 
     // --- Filter and Action Functions ---
+
+    // --- FEATURE UPDATE & BUG FIX: Dynamically generate .Aking-ignore based on actual unselected items ---
+    function handleDownloadIgnoreFile() {
+        const unselectedRoots = new Set();
+        
+        // Helper function to find the highest-level unselected nodes
+        function findUnselectedRoots(nodeMap) {
+            for (const node of nodeMap.values()) {
+                if (!node.selected) {
+                    // If this node is unselected, add its name and don't check its children.
+                    unselectedRoots.add(node.name);
+                } else if (node.type === 'folder' && node.children) {
+                    // If it's selected, continue searching in its children.
+                    findUnselectedRoots(node.children);
+                }
+            }
+        }
+
+        findUnselectedRoots(fileSystemTree);
+
+        let content = `# 這是一個根據您當前選擇產生的忽略檔案 (Aking-ignore.txt)
+# 將此檔案放在您要讀取的資料夾的根目錄下，下次讀取時將會自動套用。
+# 每一行代表一個要忽略的檔案或資料夾名稱 (會遞迴忽略其下所有內容)。
+# 以 # 開頭的行是註解，會被忽略。
+#
+# --- 範例規則 ---
+# node_modules
+# .env
+# dist
+# build
+#
+# --- 您目前未勾選的項目 ---
+`;
+        
+        if (unselectedRoots.size > 0) {
+            content += Array.from(unselectedRoots).join('\n');
+        } else {
+            content += "# (您已全選所有項目)";
+        }
+
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'Aking-ignore.txt';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    }
+
 
     function handleDeselectBySize() {
         const sizeLimitKB = parseFloat(sizeLimitInput.value);
@@ -635,10 +703,10 @@
         }
         const sizeLimitBytes = sizeLimitKB * 1024;
         let count = 0;
-        getAllFileNodes(fileSystemTree).forEach(node => {
-            if (node.fileObject.size > sizeLimitBytes) {
+        getAllNodes(fileSystemTree).forEach(node => {
+            if (node.fileObject && node.fileObject.size > sizeLimitBytes) {
                 if (node.selected) {
-                    updateSelectionState(node, false, false);
+                    updateSelectionState(node, false, true);
                     count++;
                 }
             }
@@ -648,10 +716,10 @@
 
     function handleDeselectNonText() {
         let count = 0;
-        getAllFileNodes(fileSystemTree).forEach(node => {
+        getAllNodes(fileSystemTree).forEach(node => {
             if (!isLikelyTextFile(node.name)) {
                 if (node.selected) {
-                    updateSelectionState(node, false, false);
+                    updateSelectionState(node, false, true);
                     count++;
                 }
             }
@@ -671,12 +739,14 @@
             return;
         }
         let changedCount = 0;
-        getAllFileNodes(fileSystemTree).forEach(node => {
-            const fileExt = ('.' + node.name.split('.').pop()).toLowerCase();
-            if (types.includes(fileExt)) {
-                if (node.selected !== select) {
-                    updateSelectionState(node, select, false);
-                    changedCount++;
+        getAllNodes(fileSystemTree).forEach(node => {
+            if(node.type === 'file'){
+                const fileExt = ('.' + node.name.split('.').pop()).toLowerCase();
+                if (types.includes(fileExt)) {
+                    if (node.selected !== select) {
+                        updateSelectionState(node, select, false);
+                        changedCount++;
+                    }
                 }
             }
         });
@@ -712,14 +782,14 @@
         for (const node of lastSelectedFiles) {
             try {
                 const fileContent = await node.fileObject.text();
-                outputContent += `路徑/${node.path}內容如下：\n`;
+                outputContent += `路徑/${node.webkitRelativePath}內容如下：\n`;
                 outputContent += `${fileContent}\n\n`;
                 filesReadSoFar++;
                 if (filesReadSoFar % 5 === 0 || filesReadSoFar === lastSelectedFiles.length) { 
                     outputArea.placeholder = `正在處理... 已讀取 ${filesReadSoFar} / ${lastSelectedFiles.length} 個檔案。`;
                 }
             } catch (error) {
-                outputContent += `路徑/${node.path}內容如下：\n[錯誤：無法讀取檔案內容 - ${error.message}]\n\n`;
+                outputContent += `路徑/${node.webkitRelativePath}內容如下：\n[錯誤：無法讀取檔案內容 - ${error.message}]\n\n`;
                 console.error(`讀取檔案 ${node.path} 失敗:`, error);
             }
         }
@@ -732,13 +802,14 @@
     
     // --- Helper and Utility Functions ---
 
-    function getAllFileNodes(nodeMap) {
+    function getAllNodes(nodeMap, includeFolders = false) {
         let nodes = [];
         for (const node of nodeMap.values()) {
-            if (node.type === 'file') {
+            if (node.type === 'file' || (includeFolders && node.type === 'folder')) {
                 nodes.push(node);
-            } else if (node.type === 'folder' && node.children) {
-                nodes = nodes.concat(getAllFileNodes(node.children));
+            }
+            if (node.type === 'folder' && node.children) {
+                nodes = nodes.concat(getAllNodes(node.children, includeFolders));
             }
         }
         return nodes;
@@ -821,7 +892,7 @@
         for (const node of lastSelectedFiles) {
             try {
                 const fileContent = await node.fileObject.text();
-                const fileBlock = `路徑/${node.path}內容如下：\n${fileContent}\n\n`;
+                const fileBlock = `路徑/${node.webkitRelativePath}內容如下：\n${fileContent}\n\n`;
                 const blockTokens = estimateTokens(fileBlock);
                 if (currentChunkContent !== initialContent && currentChunkTokens + blockTokens > tokenLimit) {
                     chunks.push(currentChunkContent);
@@ -833,7 +904,7 @@
                 }
             } catch (error) {
                 console.error(`分割時讀取檔案 ${node.path} 失敗:`, error);
-                const errorBlock = `路徑/${node.path}內容如下：\n[錯誤：無法讀取檔案內容 - ${error.message}]\n\n`;
+                const errorBlock = `路徑/${node.webkitRelativePath}內容如下：\n[錯誤：無法讀取檔案內容 - ${error.message}]\n\n`;
                 currentChunkContent += errorBlock;
                 currentChunkTokens += estimateTokens(errorBlock);
             }
