@@ -394,7 +394,18 @@
         
         statusDiv.textContent = '正在讀取最新檔案並建立檔案樹...';
         fileSystemTree.clear();
-        allFileObjects = Array.from(files);
+        
+        // 先過濾掉包含系統資料夾的檔案
+        allFileObjects = Array.from(files).filter(file => {
+            const pathParts = file.webkitRelativePath.split('/');
+            // 檢查路徑中是否包含以 . 或 _ 開頭的資料夾
+            const hasSystemFolder = pathParts.some((part, index) => {
+                // 跳過根目錄和檔案名稱本身
+                if (index === 0 || index === pathParts.length - 1) return false;
+                return (part.startsWith('.') || part.startsWith('_')) && part.length > 1;
+            });
+            return !hasSystemFolder; // 只保留不包含系統資料夾的檔案
+        });
 
         for (const file of allFileObjects) {
             const pathParts = file.webkitRelativePath.split('/');
@@ -501,9 +512,8 @@
             let shouldDeselect = false;
             const pathParts = node.webkitRelativePath.split('/');
             
-            if (pathParts.some(part => part.startsWith('.') && part.length > 1)) { // Ignore dotfiles/folders
-                shouldDeselect = true;
-            } else if (pathParts.some(part => ignorePatterns.has(part))) { // Ignore via .Aking-ignore
+            // 只檢查 Aking-ignore 規則 (系統資料夾已經在建立檔案樹時過濾掉了)
+            if (pathParts.some(part => ignorePatterns.has(part))) {
                 shouldDeselect = true;
             }
 
