@@ -395,9 +395,16 @@
         statusDiv.textContent = '正在讀取最新檔案並建立檔案樹...';
         fileSystemTree.clear();
         
-        // 先過濾掉包含系統資料夾的檔案
+        // 先過濾掉包含系統資料夾或隱藏檔案的檔案
         allFileObjects = Array.from(files).filter(file => {
             const pathParts = file.webkitRelativePath.split('/');
+            const fileName = pathParts[pathParts.length - 1];
+            
+            // 過濾掉檔案名稱以 . 或 _ 開頭的檔案（例如 .gitignore, _temp.txt）
+            if (fileName.startsWith('.') || fileName.startsWith('_')) {
+                return false;
+            }
+            
             // 檢查路徑中是否包含以 . 或 _ 開頭的資料夾
             const hasSystemFolder = pathParts.some((part, index) => {
                 // 跳過根目錄和檔案名稱本身
@@ -512,27 +519,43 @@
             let shouldDeselect = false;
             const pathParts = node.webkitRelativePath.split('/');
             
-            // 只檢查 Aking-ignore 規則 (系統資料夾已經在建立檔案樹時過濾掉了)
+            // 檢查 Aking-ignore 規則
             if (pathParts.some(part => ignorePatterns.has(part))) {
                 shouldDeselect = true;
             }
 
             if (node.type === 'file') {
+                // 如果檔案已經被標記為需要排除，就不用再分析內容了
+                if (shouldDeselect) {
+                    updateFileNodeLabel(node, 0, false, "(已忽略)");
+                    if (applyAutoDeselection && node.selected) {
+                        updateSelectionState(node, false, false); 
+                        deselectedCount++;
+                    }
+                    continue;
+                }
+                
                 let isText = isLikelyTextFile(node.name);
                 let tokens = 0;
-                try {
-                    if (isText) {
-                        const fileContent = await node.fileObject.text();
-                        tokens = estimateTokens(fileContent);
-                    }
-                    updateFileNodeLabel(node, tokens, isText);
-                    if (!shouldDeselect) {
-                        if (!isText || tokens > 50000) { shouldDeselect = true; }
-                    }
-                } catch (e) {
-                    console.error(`Error processing file ${node.path}:`, e);
-                    updateFileNodeLabel(node, 0, false, "[讀取錯誤]");
+                
+                // 先檢查檔案大小，如果太大就不要讀取內容
+                const fileSizeKB = node.fileObject.size / 1024;
+                if (fileSizeKB > 10240) { // 超過 10MB 的檔案直接標記為過大
+                    updateFileNodeLabel(node, 0, false, `(檔案過大: ${fileSizeKB.toFixed(2)} KB)`);
                     shouldDeselect = true;
+                } else {
+                    try {
+                        if (isText) {
+                            const fileContent = await node.fileObject.text();
+                            tokens = estimateTokens(fileContent);
+                        }
+                        updateFileNodeLabel(node, tokens, isText);
+                        if (!isText || tokens > 50000) { shouldDeselect = true; }
+                    } catch (e) {
+                        console.error(`Error processing file ${node.path}:`, e);
+                        updateFileNodeLabel(node, 0, false, "[讀取錯誤]");
+                        shouldDeselect = true;
+                    }
                 }
             }
 
