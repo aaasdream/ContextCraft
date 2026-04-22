@@ -520,7 +520,13 @@
             const pathParts = node.webkitRelativePath.split('/');
             
             // 檢查 Aking-ignore 規則
-            if (pathParts.some(part => ignorePatterns.has(part))) {
+            let relativePathWithoutRoot = pathParts.slice(1).join('/');
+            if (Array.from(ignorePatterns).some(pattern => {
+                let cleanPattern = pattern.endsWith('/') ? pattern.slice(0, -1) : pattern;
+                return relativePathWithoutRoot === cleanPattern || 
+                       relativePathWithoutRoot.startsWith(cleanPattern + '/') || 
+                       pathParts.some(part => part === cleanPattern);
+            })) {
                 shouldDeselect = true;
             }
 
